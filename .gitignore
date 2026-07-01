@@ -1,0 +1,17 @@
+# Secrets — NEVER commit real cookies/tokens
+.env
+.env.*
+!.env.example
+session.json
+*.local
+
+# Node
+node_modules/
+npm-debug.log*
+dist/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.log
