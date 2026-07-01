@@ -37,19 +37,28 @@ function toArtifact(m, inputSettingKey) {
 }
 
 /**
- * Upload media đầu vào (đa ảnh/video/audio/end_frame) → { settings, artifacts }.
- * settings.*_urls dùng cho quote/model; artifacts đính kèm file THẬT (bắt buộc để gen chạy).
+ * Upload media đầu vào → { settings, artifacts, prompt }. Xác nhận từ generation THẬT:
+ *  - Đa ảnh dùng TAG: prompt chứa `@img1..@imgN`, settings.tagReferences map tag→ảnh,
+ *    settings.image_urls để resolve model (multi-to-video), artifacts đính file (inputSettingKey 'image_url').
+ *  - 1 ảnh (image) => image_url (image-to-video). video/audio => *_url(s).
  */
-async function resolveMedia(params) {
+export async function resolveMedia(params) {
+  let prompt = params.prompt ?? params.settings?.prompt ?? '';
   const s = { ...(params.settings || {}) };
   const artifacts = [];
+  const tagReferences = Array.isArray(s.tagReferences) ? [...s.tagReferences] : [];
   try {
     const images = asArr(params.images);
-    if (images.length > config.MAX_IMAGES) throw new Error(`Tối đa ${config.MAX_IMAGES} ảnh (image_urls)`);
+    if (images.length > config.MAX_IMAGES) throw new Error(`Tối đa ${config.MAX_IMAGES} ảnh`);
     if (images.length) {
       const ups = await Promise.all(images.map((u) => upload.uploadMedia(u, 'image')));
       s.image_urls = ups.map((m) => m.fileUrl);
-      for (const m of ups) artifacts.push(toArtifact(m, 'image_urls'));
+      ups.forEach((m, i) => {
+        artifacts.push(toArtifact(m, 'image_url'));
+        const tagId = `@img${i + 1}`;
+        tagReferences.push({ tagId, type: '@img', orderForType: i + 1 });
+        if (!prompt.includes(tagId)) prompt = prompt ? `${tagId} ${prompt}` : tagId;
+      });
     }
     if (params.image) { const m = await upload.uploadMedia(params.image, 'image'); s.image_url = m.fileUrl; artifacts.push(toArtifact(m, 'image_url')); }
     if (params.endFrame) { const m = await upload.uploadMedia(params.endFrame, 'image'); s.end_frame = m.fileUrl; artifacts.push(toArtifact(m, 'end_frame')); }
@@ -57,19 +66,21 @@ async function resolveMedia(params) {
     if (videos.length) {
       const ups = await Promise.all(videos.map((u) => upload.uploadMedia(u, 'video')));
       s.video_urls = ups.map((m) => m.fileUrl);
-      for (const m of ups) artifacts.push(toArtifact(m, 'video_urls'));
+      for (const m of ups) artifacts.push(toArtifact(m, 'video_url'));
     }
     const audios = asArr(params.audios);
     if (audios.length) {
       const ups = await Promise.all(audios.map((u) => upload.uploadMedia(u, 'audio')));
       s.audio_urls = ups.map((m) => m.fileUrl);
-      for (const m of ups) artifacts.push(toArtifact(m, 'audio_urls'));
+      for (const m of ups) artifacts.push(toArtifact(m, 'audio_url'));
     }
+    if (tagReferences.length) s.tagReferences = tagReferences;
+    if (prompt) s.prompt = prompt;
   } catch (e) {
     e.mediaError = true;
     throw e;
   }
-  return { settings: s, artifacts };
+  return { settings: s, artifacts, prompt };
 }
 
 /**
@@ -91,7 +102,7 @@ export async function createVideo(client, params, ip) {
   try {
     chatSessionId = await ensureClientSession(client, params.chatSessionId);
     const media = await resolveMedia(params);
-    genParams = { ...params, settings: media.settings, artifacts: media.artifacts };
+    genParams = { ...params, prompt: media.prompt, settings: media.settings, artifacts: media.artifacts };
   } catch (e) {
     if (isAuthErr(e)) { await monitor.noteSessionExpired(`HTTP ${e.status}`); throw err('SESSION_EXPIRED', 'Dịch vụ tạm gián đoạn (session nguồn hết hạn).'); }
     if (e.mediaError) throw err('MEDIA_ERROR', e.message);

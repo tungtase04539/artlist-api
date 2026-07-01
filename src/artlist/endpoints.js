@@ -135,15 +135,14 @@ export function normalizeStatus(raw) {
 // ─────────────────────────── helpers ───────────────────────────
 /** settings gửi lên. Ưu tiên params.settings (khớp getUIConfig từng model); có default cho Seedance. */
 function buildSettings(params) {
-  if (params.settings && typeof params.settings === 'object') {
-    return { prompt: params.prompt ?? params.settings.prompt, ...params.settings };
-  }
+  const s = params.settings || {};
   return {
-    prompt: params.prompt,
-    resolution: params.resolution ?? '720p',
-    duration: params.duration ?? 4,
-    generate_audio: params.generateAudio ?? true,
-    aspect_ratio: params.aspectRatio ?? '16:9',
+    resolution: s.resolution ?? params.resolution ?? '720p',
+    duration: s.duration ?? params.duration ?? 4,
+    generate_audio: s.generate_audio ?? params.generateAudio ?? true,
+    aspect_ratio: s.aspect_ratio ?? params.aspectRatio ?? '16:9',
+    ...s, // pass-through: image_urls, image_url, tagReferences, video_urls, audio_urls, end_frame
+    prompt: params.prompt ?? s.prompt,
   };
 }
 
