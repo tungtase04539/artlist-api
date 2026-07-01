@@ -46,20 +46,20 @@ test('normalizeStatus: video done với outputs[].fileUrl', () => {
   assert.equal(s.videoUrl, 'https://cdn/y.mp4');
 });
 
-test('normalizeQuote: map cost/digitalSignature/timestamp', () => {
-  const raw = { result: { data: { json: { cost: 1200, digitalSignature: 'JWT.aaa.bbb', timestamp: 1782887821107 } } } };
+test('normalizeQuote: map cost/digitalSignature/timestamp (envelope {success,data})', () => {
+  const raw = { result: { data: { json: { success: true, data: { cost: 1200, digitalSignature: 'JWT.aaa.bbb', timestamp: 1782887821107 } } } } };
   const q = ep.normalizeQuote(raw);
   assert.equal(q.price, 1200);
   assert.equal(q.costQuoteDigitalSignature, 'JWT.aaa.bbb');
   assert.equal(q.timestamp, 1782887821107);
 });
 
-test('quoteRequest: đúng endpoint & input shape', () => {
-  const r = ep.quoteRequest({ prompt: 'p', duration: 4, resolution: '720p', aspectRatio: '16:9', generateAudio: true, modelId: 2524 });
+test('quoteRequest: đúng endpoint & input shape (modelGroupId 358 + input.modelId 2524)', () => {
+  const r = ep.quoteRequest({ prompt: 'p', duration: 4, resolution: '720p', aspectRatio: '16:9', generateAudio: true, modelId: 2524, modelGroupId: 358 });
   assert.equal(r.method, 'GET');
   assert.ok(r.url.includes('/api/trpc/modelRouter.getCostQuote?input='));
   const input = JSON.parse(decodeURIComponent(r.url.split('input=')[1]));
-  assert.deepEqual(input, { json: { modelGroupId: 2524, input: { prompt: 'p', resolution: '720p', duration: 4, generate_audio: true, aspect_ratio: '16:9' } } });
+  assert.deepEqual(input, { json: { modelGroupId: 358, input: { modelId: 2524, prompt: 'p', resolution: '720p', duration: 4, generate_audio: true, aspect_ratio: '16:9' } } });
 });
 
 test('submitRequest: body khớp cấu trúc request THẬT', () => {

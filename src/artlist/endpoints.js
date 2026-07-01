@@ -36,8 +36,9 @@ function trpcQueryUrl(procedure, input) {
 export function quoteRequest(params) {
   return {
     url: trpcQueryUrl('modelRouter.getCostQuote', {
-      modelGroupId: params.modelId ?? 2524,
-      input: buildSettings(params),
+      // ⚠️ modelGroupId là ID GROUP (Seedance 2.0 = 358), KHÁC với modelId (2524).
+      modelGroupId: params.modelGroupId ?? 358,
+      input: { modelId: params.modelId ?? 2524, ...buildSettings(params) },
     }),
     method: 'GET',
   };
@@ -49,7 +50,8 @@ export function quoteRequest(params) {
  * @returns {import('./types.js').QuoteResult}
  */
 export function normalizeQuote(raw) {
-  const q = raw?.result?.data?.json ?? {};
+  const node = raw?.result?.data?.json;
+  const q = node?.data ?? node ?? {}; // modelRouter bọc trong { success, data }
   return {
     price: q.cost ?? q.price,
     timestamp: q.timestamp,
@@ -70,7 +72,7 @@ export function submitRequest(params) {
       json: {
         chatSessionId: params.chatSessionId,
         inputs: buildInputs(params),
-        modelGroupId: params.modelId ?? 2524, // 2524 = Seedance
+        modelGroupId: params.modelId ?? 2524, // ⚠️ create nhận MODEL ID ở field "modelGroupId" (theo request thật)
         feature: params.image ? 'image-to-video' : 'text-to-video',
         price: params.price, // từ QUOTE
         settings: buildSettings(params),
