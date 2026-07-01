@@ -1,6 +1,9 @@
 import { config } from '../config.js';
 import { logger } from '../lib/logger.js';
 import { Usage, Alerts, Clients } from '../db/repos.js';
+import { pushAlert } from '../lib/notify.js';
+
+const PUSH_KINDS = new Set(String(config.ALERT_PUSH_KINDS || '').split(',').map((s) => s.trim()).filter(Boolean));
 
 /**
  * Giám sát sử dụng + phát hiện lạm dụng/cheat. Ghi usage_events, dựng alerts (dedup qua DB),
@@ -15,9 +18,10 @@ const HOUR = 3_600_000;
 const ALERT_DEDUP_MS = 5 * MIN;
 
 async function raise({ clientId = null, severity, kind, message, meta = null }) {
-  if (await Alerts.existsRecent(clientId, kind, ALERT_DEDUP_MS)) return;
+  if (await Alerts.existsRecent(clientId, kind, ALERT_DEDUP_MS)) return; // dedup → chỉ đẩy alert MỚI
   await Alerts.add({ clientId, severity, kind, message, meta });
   logger[severity === 'critical' ? 'error' : 'warn']({ clientId, kind, meta }, `🚨 ALERT: ${message}`);
+  if (PUSH_KINDS.has(kind)) pushAlert({ severity, kind, message, meta }).catch(() => {}); // best-effort, không chặn
 }
 export const raiseAlert = raise;
 

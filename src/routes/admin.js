@@ -4,6 +4,7 @@ import { config } from '../config.js';
 import { session } from '../session/session.js';
 import { Clients, ApiKeys, Credits, Jobs, Usage, Alerts } from '../db/repos.js';
 import { sweepStaleJobs, checkSessionHealth } from '../videos/service.js';
+import { pushAlert } from '../lib/notify.js';
 
 const clientSchema = z.object({
   name: z.string().min(1),
@@ -112,6 +113,13 @@ export default async function adminRoutes(app) {
 
   // Đẩy thủ công các job đang chạy (ngoài Cron).
   app.post('/admin/sweep', async () => ({ swept: await sweepStaleJobs(0) }));
+
+  // Gửi thử cảnh báo (kiểm tra Telegram/webhook đã cấu hình đúng chưa).
+  app.post('/admin/notify/test', async () => {
+    const configured = Boolean(config.TELEGRAM_BOT_TOKEN && config.TELEGRAM_CHAT_ID) || Boolean(config.ALERT_WEBHOOK_URL);
+    await pushAlert({ severity: 'info', kind: 'test', message: 'Test cảnh báo từ Artlist API — nếu bạn thấy tin này, kênh đã hoạt động ✅' });
+    return { sent: true, configured, channels: { telegram: Boolean(config.TELEGRAM_BOT_TOKEN && config.TELEGRAM_CHAT_ID), webhook: Boolean(config.ALERT_WEBHOOK_URL) } };
+  });
 
   // ── Session artlist (cập nhật cookie lúc chạy) ──
   app.get('/admin/session', async () => { await session.ensureFresh(); return { session: session.status() }; });

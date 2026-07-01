@@ -45,6 +45,13 @@ const schema = z.object({
   MAX_VIDEO_MB: z.coerce.number().positive().default(100), // trần video đầu vào
   MAX_AUDIO_MB: z.coerce.number().positive().default(30), // trần audio đầu vào
   MAX_IMAGES: z.coerce.number().int().positive().default(9), // số ảnh tối đa (image_urls)
+
+  // Cảnh báo đẩy (khi session hết hạn / cheat...). Trống = chỉ ghi dashboard+log.
+  ALERT_WEBHOOK_URL: z.string().url().optional(), // Discord/Slack/webhook tuỳ ý (nhận {content,text,...})
+  TELEGRAM_BOT_TOKEN: z.string().optional(), // bot Telegram (BotFather)
+  TELEGRAM_CHAT_ID: z.string().optional(), // chat/nhóm nhận cảnh báo
+  DASHBOARD_URL: z.string().url().optional(), // chèn link dashboard vào nội dung cảnh báo
+  ALERT_PUSH_KINDS: z.string().optional().default('session_expired,auto_suspend,price_mismatch'), // loại nào thì đẩy
 });
 
 const parsed = schema.safeParse(process.env);
