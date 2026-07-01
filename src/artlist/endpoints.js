@@ -1,119 +1,83 @@
 import { config } from '../config.js';
 
 /**
- * Khai báo TẬP TRUNG endpoint & shape request artlist (tRPC). Đã verify LIVE.
+ * Endpoint & shape request artlist (tRPC). Đã VERIFY LIVE (text-to-video & image/multi-to-video).
  *
- * Luồng tạo video (tổng quát cho MỌI model video):
- *   1) QUOTE  modelRouter.getCostQuote  { modelGroupId, input: settings }
- *             → server TỰ RESOLVE modelId từ group + settings → { modelId, cost, digitalSignature, timestamp }
- *   2) CREATE userGenerationRouter.createUserGeneration
- *             → body.modelGroupId = modelId ĐÃ RESOLVE (quirk đặt tên của artlist)
- *   3) STATUS userGenerationRouter.getUserGeneration (poll)
- *
- * Catalog:
- *   modelRouter.getModelGroups          → toàn bộ danh mục + group + credits + features
- *   modelRouter.getUIConfig{modelGroupId}→ đủ thông số (settings) + options + default của group
+ * Media đầu vào (image/video/audio) — xác nhận từ request thật:
+ *   - Upload: getPresignedUrl (PUT) → PUT S3 → getPresignedUrlFromKey (GET-url đọc được).
+ *   - QUOTE settings: có `<kind>_urls: [url-string]` (để resolve model + ký giá).
+ *   - CREATE inputs:  `{ prompt, tagReferences, <kind>_urls: [{fileUrl}] }`.
+ *   - CREATE settings: có `tagReferences` (KHÔNG có *_urls).
+ *   - artifacts: `[{ fileKey, metadata:{ fileUrl, mimeType, inputSettingKey:'<kind>_urls', fileType:'deviceUpload', fileName, byteSize, width?, height? } }]`.
+ *   - meta.referentialEqualities: `{ 'inputs.tagReferences': ['settings.tagReferences'] }` khi có tag.
  */
 
 const base = () => {
-  if (!config.ARTLIST_BASE_URL) {
-    throw new Error('Chưa cấu hình ARTLIST_BASE_URL — điền vào .env (vd https://toolkit.artlist.io).');
-  }
+  if (!config.ARTLIST_BASE_URL) throw new Error('Chưa cấu hình ARTLIST_BASE_URL (vd https://toolkit.artlist.io).');
   return config.ARTLIST_BASE_URL.replace(/\/$/, '');
 };
 
 function trpcQueryUrl(procedure, input) {
-  const encoded = encodeURIComponent(JSON.stringify({ json: input }));
-  return `${base()}/api/trpc/${procedure}?input=${encoded}`;
+  return `${base()}/api/trpc/${procedure}?input=${encodeURIComponent(JSON.stringify({ json: input }))}`;
 }
 
-// ─────────────────────────── Catalog ───────────────────────────
-export function modelGroupsRequest() {
-  return { url: trpcQueryUrl('modelRouter.getModelGroups', {}), method: 'GET' };
-}
-export function uiConfigRequest(modelGroupId) {
-  return { url: trpcQueryUrl('modelRouter.getUIConfig', { modelGroupId }), method: 'GET' };
-}
+// ── Catalog ──
+export function modelGroupsRequest() { return { url: trpcQueryUrl('modelRouter.getModelGroups', {}), method: 'GET' }; }
+export function uiConfigRequest(modelGroupId) { return { url: trpcQueryUrl('modelRouter.getUIConfig', { modelGroupId }), method: 'GET' }; }
 
-// ─────────────────────────── Session (auto-create) ───────────────────────────
-// chatSession.createChatSession (mutation) {name, teamId} -> { id }. Tạo session artlist tự động.
+// ── Session (auto-create) ──
 export function createSessionRequest(name, teamId) {
   return { url: `${base()}/api/trpc/chatSession.createChatSession`, method: 'POST', body: { json: { name, teamId } } };
 }
-export function normalizeSession(raw) {
-  const node = raw?.result?.data?.json;
-  return (node?.data ?? node)?.id;
-}
+export function normalizeSession(raw) { const n = raw?.result?.data?.json; return (n?.data ?? n)?.id; }
 
-// ─────────────────────────── Upload (image-to-video) ───────────────────────────
-// uploadRouter.getPresignedUrl {fileName, fileType, expiresIn} -> { presignedUrl, fileKey, fileUrl }.
-export function presignRequest({ fileName, fileType, expiresIn = 3600 }) {
+// ── Upload ──
+export function presignRequest({ fileName, fileType, expiresIn = 259200 }) {
   return { url: `${base()}/api/trpc/uploadRouter.getPresignedUrl`, method: 'POST', body: { json: { fileName, fileType, expiresIn } } };
 }
 export function normalizePresign(raw) {
-  const node = raw?.result?.data?.json;
-  const d = node?.data ?? node ?? {};
+  const n = raw?.result?.data?.json; const d = n?.data ?? n ?? {};
   return { presignedUrl: d.presignedUrl, fileKey: d.fileKey, fileUrl: d.fileUrl };
 }
+/** GET-url đọc được từ fileKey (bắt buộc để model đọc ảnh). */
+export function presignFromKeyRequest(fileKey) {
+  return { url: `${base()}/api/trpc/uploadRouter.getPresignedUrlFromKey`, method: 'POST', body: { json: { fileKey } } };
+}
+export function normalizeReadUrl(raw) { const n = raw?.result?.data?.json; return (n?.data ?? n)?.presignedUrl; }
 
-// ─────────────────────────── QUOTE ───────────────────────────
-/** @param {import('./types.js').GenerateParams} params */
+// ── QUOTE ──
 export function quoteRequest(params) {
-  return {
-    url: trpcQueryUrl('modelRouter.getCostQuote', {
-      modelGroupId: params.modelGroupId ?? 358, // ID GROUP (vd Seedance 2.0 = 358)
-      input: buildSettings(params), // server tự resolve modelId từ group + settings
-    }),
-    method: 'GET',
-  };
+  return { url: trpcQueryUrl('modelRouter.getCostQuote', { modelGroupId: params.modelGroupId ?? 358, input: quoteSettings(params) }), method: 'GET' };
 }
-
-/** @returns {import('./types.js').QuoteResult} */
 export function normalizeQuote(raw) {
-  const node = raw?.result?.data?.json;
-  const q = node?.data ?? node ?? {}; // modelRouter bọc trong { success, data }
-  return {
-    price: q.cost ?? q.price,
-    timestamp: q.timestamp,
-    costQuoteDigitalSignature: q.digitalSignature ?? q.costQuoteDigitalSignature,
-    resolvedModelId: q.modelId, // modelId server resolve từ group + settings
-    modelFeature: q.modelFeature,
-  };
+  const n = raw?.result?.data?.json; const q = n?.data ?? n ?? {};
+  return { price: q.cost ?? q.price, timestamp: q.timestamp, costQuoteDigitalSignature: q.digitalSignature ?? q.costQuoteDigitalSignature, resolvedModelId: q.modelId, modelFeature: q.modelFeature };
 }
 
-// ─────────────────────────── CREATE ───────────────────────────
-/** @param {import('./types.js').GenerateParams & import('./types.js').QuoteResult} params */
+// ── CREATE ──
 export function submitRequest(params) {
-  return {
-    url: `${base()}/api/trpc/userGenerationRouter.createUserGeneration`,
-    method: 'POST',
-    body: {
-      json: {
-        chatSessionId: params.chatSessionId, // ⚠️ session artlist có sẵn (bắt buộc)
-        inputs: buildInputs(params),
-        // ⚠️ create nhận MODEL ID (đã resolve từ quote) ở field tên "modelGroupId".
-        modelGroupId: params.resolvedModelId ?? params.modelId ?? 2524,
-        feature: params.modelFeature ?? params.feature ?? (params.image || params.images ? 'image-to-video' : 'text-to-video'),
-        price: params.price, // từ QUOTE
-        settings: buildSettings(params),
-        artifacts: params.artifacts ?? [],
-        costQuoteDigitalSignature: params.costQuoteDigitalSignature, // từ QUOTE
-        timestamp: params.timestamp, // từ QUOTE
-        generationMethod: params.generationMethod ?? 'credits',
-        isCopyCmsFileEnabled: false,
-      },
-    },
+  const inputs = buildInputs(params);
+  const json = {
+    chatSessionId: params.chatSessionId,
+    inputs,
+    modelGroupId: params.resolvedModelId ?? params.modelId ?? 2524,
+    feature: params.modelFeature ?? params.feature ?? 'text-to-video',
+    price: params.price,
+    settings: createSettings(params),
+    artifacts: params.artifacts ?? [],
+    costQuoteDigitalSignature: params.costQuoteDigitalSignature,
+    timestamp: params.timestamp,
+    generationMethod: params.generationMethod ?? 'credits',
+    isCopyCmsFileEnabled: false,
   };
+  const body = { json };
+  if (inputs.tagReferences?.length) body.meta = { referentialEqualities: { 'inputs.tagReferences': ['settings.tagReferences'] } };
+  return { url: `${base()}/api/trpc/userGenerationRouter.createUserGeneration`, method: 'POST', body };
 }
 
-// ─────────────────────────── STATUS ───────────────────────────
-export function statusRequest(providerJobId) {
-  return { url: trpcQueryUrl('userGenerationRouter.getUserGeneration', { id: providerJobId }), method: 'GET' };
-}
-export function resultRequest(providerJobId) {
-  return statusRequest(providerJobId);
-}
-
+// ── STATUS ──
+export function statusRequest(id) { return { url: trpcQueryUrl('userGenerationRouter.getUserGeneration', { id }), method: 'GET' }; }
+export function resultRequest(id) { return statusRequest(id); }
 export function normalizeStatus(raw) {
   let node = raw?.result?.data?.json;
   if (node && !Array.isArray(node) && node.id === undefined && node.data !== undefined) node = node.data;
@@ -132,23 +96,32 @@ export function normalizeStatus(raw) {
   };
 }
 
-// ─────────────────────────── helpers ───────────────────────────
-/** settings gửi lên. Ưu tiên params.settings (khớp getUIConfig từng model); có default cho Seedance. */
-function buildSettings(params) {
-  const s = params.settings || {};
+// ── helpers ──
+const prompt = (p) => p.prompt ?? p.settings?.prompt;
+function basicSettings(p) {
+  const s = p.settings || {};
   return {
-    resolution: s.resolution ?? params.resolution ?? '720p',
-    duration: s.duration ?? params.duration ?? 4,
-    generate_audio: s.generate_audio ?? params.generateAudio ?? true,
-    aspect_ratio: s.aspect_ratio ?? params.aspectRatio ?? '16:9',
-    ...s, // pass-through: image_urls, image_url, tagReferences, video_urls, audio_urls, end_frame
-    prompt: params.prompt ?? s.prompt,
+    resolution: s.resolution ?? p.resolution ?? '720p',
+    duration: s.duration ?? p.duration ?? 4,
+    generate_audio: s.generate_audio ?? p.generateAudio ?? true,
+    aspect_ratio: s.aspect_ratio ?? p.aspectRatio ?? '16:9',
   };
 }
-
-function buildInputs(params) {
-  const inputs = { prompt: params.prompt ?? params.settings?.prompt };
-  if (params.image) inputs.image = params.image;
+/** Settings cho QUOTE: basic + *_urls (string) để resolve model. */
+function quoteSettings(p) {
+  return { ...basicSettings(p), ...(p.media?.urlStrings || {}), prompt: prompt(p) };
+}
+/** Settings cho CREATE: basic + tagReferences (KHÔNG *_urls). */
+function createSettings(p) {
+  const s = { ...basicSettings(p), prompt: prompt(p) };
+  if (p.media?.tagReferences?.length) s.tagReferences = p.media.tagReferences;
+  return s;
+}
+/** inputs cho CREATE: prompt + tagReferences + *_urls (object {fileUrl}). */
+function buildInputs(p) {
+  const inputs = { prompt: prompt(p) };
+  if (p.media?.tagReferences?.length) inputs.tagReferences = p.media.tagReferences;
+  Object.assign(inputs, p.media?.urlObjects || {});
   return inputs;
 }
 

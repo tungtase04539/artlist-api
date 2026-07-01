@@ -14,6 +14,8 @@ import {
   normalizeSession,
   presignRequest,
   normalizePresign,
+  presignFromKeyRequest,
+  normalizeReadUrl,
 } from './endpoints.js';
 import { uuidv7 } from '../lib/uuid.js';
 
@@ -72,6 +74,11 @@ export async function createChatSession(name = 'api') {
 /** Xin presigned URL để upload ảnh → { presignedUrl, fileKey, fileUrl }. */
 export async function getPresignedUpload(fileName, fileType) {
   return normalizePresign(await call(presignRequest({ fileName, fileType })));
+}
+
+/** GET-url ĐỌC ĐƯỢC từ fileKey (bắt buộc để model đọc media). */
+export async function getReadableUrl(fileKey) {
+  return normalizeReadUrl(await call(presignFromKeyRequest(fileKey)));
 }
 
 /**
