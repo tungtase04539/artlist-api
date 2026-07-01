@@ -38,6 +38,7 @@ export default async function videoRoutes(app) {
       return reply.code(202).send(publicJob(job));
     } catch (err) {
       if (err.code === 'TOO_MANY_JOBS') return reply.code(429).send({ error: err.message });
+      if (err.code === 'NO_SESSION') return reply.code(400).send({ error: err.message });
       request.log.error({ err: String(err) }, 'tạo job lỗi');
       return reply.code(500).send({ error: 'Không tạo được job' });
     }
@@ -61,6 +62,7 @@ function publicJob(job) {
     status: job.status,
     progress: job.progress,
     videoUrl: job.videoUrl,
+    thumbnailUrl: job.thumbnailUrl,
     error: job.error,
     createdAt: job.createdAt,
     updatedAt: job.updatedAt,

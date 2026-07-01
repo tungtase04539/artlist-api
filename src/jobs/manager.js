@@ -1,6 +1,5 @@
 import { config } from '../config.js';
 import { logger } from '../lib/logger.js';
-import { uuidv7 } from '../lib/uuid.js';
 import * as artlist from '../artlist/client.js';
 import { jobStore } from './store.js';
 
@@ -19,14 +18,19 @@ export async function createJob(params) {
     throw err;
   }
 
-  // chatSessionId gom nhiều generation vào 1 "project". Tự sinh UUIDv7 nếu caller không truyền.
-  const p = { ...params, chatSessionId: params.chatSessionId || uuidv7() };
+  // ⚠️ chatSessionId PHẢI là session đã tồn tại trên artlist (uuid tự sinh sẽ bị 404).
+  // Lấy từ URL trình duyệt: mở 1 project video → toolkit.artlist.io/{chatSessionId}
+  if (!params.chatSessionId) {
+    const err = new Error('Thiếu chatSessionId (session artlist có sẵn). Mở 1 project video và copy id từ URL toolkit.artlist.io/{id}.');
+    err.code = 'NO_SESSION';
+    throw err;
+  }
 
   const now = Date.now();
-  const job = jobStore.create(p, now);
+  const job = jobStore.create(params, now);
 
   try {
-    const { providerJobId } = await artlist.submit(p);
+    const { providerJobId } = await artlist.submit(params);
     jobStore.update(job.id, { providerJobId, status: 'processing' }, Date.now());
     // Khởi động poll nền, không await để trả response ngay.
     void pollUntilDone(job.id, providerJobId);
@@ -52,7 +56,7 @@ async function pollUntilDone(jobId, providerJobId) {
       const s = await artlist.status(providerJobId);
 
       if (s.status === 'done' || s.videoUrl) {
-        jobStore.update(jobId, { status: 'done', progress: 100, videoUrl: s.videoUrl }, Date.now());
+        jobStore.update(jobId, { status: 'done', progress: 100, videoUrl: s.videoUrl, thumbnailUrl: s.thumbnailUrl }, Date.now());
         logger.info({ jobId }, '✅ video xong');
         return;
       }

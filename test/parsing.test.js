@@ -46,6 +46,28 @@ test('normalizeStatus: video done với outputs[].fileUrl', () => {
   assert.equal(s.videoUrl, 'https://cdn/y.mp4');
 });
 
+test('normalizeStatus: create trả {success,data:{id}} → lấy được id', () => {
+  const createRes = { result: { data: { json: { success: true, data: { id: '019f1cb6-f362-7f2d-8416-6d3cc3295dda' } } } } };
+  const s = ep.normalizeStatus(createRes);
+  assert.equal(s.providerJobId, '019f1cb6-f362-7f2d-8416-6d3cc3295dda');
+});
+
+test('normalizeStatus: response done THẬT (video đã tạo) → done + videoUrl + thumbnail', () => {
+  const realDone = { result: { data: { json: [ {
+    id: '019f1cb6-f362-7f2d-8416-6d3cc3295dda',
+    status: 'completed',
+    fileKey: 'file-key-placeholder',
+    thumbnailUrl: 'https://cms-toolkit-public-artifacts.artlist.io/thumb.jpg',
+    videoUrl: 'https://cms-toolkit-artifacts.artlist.io/video.mp4?Expires=2098253334&Signature=abc',
+    modelId: 2524, feature: 'text-to-video',
+  } ] } } };
+  const s = ep.normalizeStatus(realDone);
+  assert.equal(s.status, 'done');
+  assert.equal(s.providerJobId, '019f1cb6-f362-7f2d-8416-6d3cc3295dda');
+  assert.ok(s.videoUrl.includes('.mp4'));
+  assert.ok(s.thumbnailUrl.includes('.jpg'));
+});
+
 test('normalizeQuote: map cost/digitalSignature/timestamp (envelope {success,data})', () => {
   const raw = { result: { data: { json: { success: true, data: { cost: 1200, digitalSignature: 'JWT.aaa.bbb', timestamp: 1782887821107 } } } } };
   const q = ep.normalizeQuote(raw);

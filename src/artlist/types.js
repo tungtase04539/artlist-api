@@ -35,6 +35,7 @@
  * @property {number} [progress]         0..100
  * @property {GenerateParams} params
  * @property {string} [videoUrl]
+ * @property {string} [thumbnailUrl]
  * @property {string} [error]
  * @property {number} createdAt
  * @property {number} updatedAt

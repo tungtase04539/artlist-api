@@ -1,5 +1,5 @@
 // Gọi QUOTE (read-only, KHÔNG tốn credits) để kiểm tra cookie/auth trước khi tạo video.
-// Chạy:  node scripts/test-quote.mjs ["prompt tuỳ chọn"]
+// Chạy:  npm run test:quote   (hoặc: node scripts/quote-smoke.mjs "prompt tuỳ chọn")
 import { getCostQuote } from '../src/artlist/client.js';
 
 const params = {
@@ -9,6 +9,7 @@ const params = {
   aspectRatio: '16:9',
   generateAudio: true,
   modelId: 2524,
+  modelGroupId: 358,
 };
 
 try {
@@ -20,7 +21,7 @@ try {
   console.log('\n→ Cookie hoạt động. Giờ có thể POST /api/videos để tạo video thật (sẽ tốn credits).');
 } catch (err) {
   console.error('❌ QUOTE lỗi:', err.message);
-  console.error('   → Nếu là UNAUTHORIZED/Session hết hạn: cookie sai hoặc đã hết hạn.');
+  console.error('   → Nếu UNAUTHORIZED/Session hết hạn: cookie sai hoặc đã hết hạn.');
   console.error('     Lấy cookie MỚI từ DevTools (kèm cf_clearance/__cf_bm mới) và cập nhật ARTLIST_COOKIE trong .env.');
   process.exitCode = 1;
 }

@@ -10,14 +10,13 @@ replay các HTTP request đã xác thực bằng cookie/token của chính bạn
 - [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) — kế hoạch triển khai 7 giai đoạn.
 - [`docs/CAPTURE_GUIDE.md`](docs/CAPTURE_GUIDE.md) — cách bắt request từ trình duyệt (**làm trước tiên**).
 
-## Trạng thái hiện tại
-- ✅ Pipeline thật đã wire & **verify khớp request captured**: QUOTE → CREATE → POLL.
-  - QUOTE:  `GET  /api/trpc/modelRouter.getCostQuote` → `{cost, digitalSignature, timestamp}`
-  - CREATE: `POST /api/trpc/userGenerationRouter.createUserGeneration` (đính kèm chữ ký)
-  - STATUS: `GET  /api/trpc/userGenerationRouter.getUserGeneration` (poll)
-  - `chatSessionId` tự sinh **UUIDv7** (client-side, không cần request tạo session).
-- ⏳ Cần xác nhận nốt: giá trị `status` khi **done** + field URL video (đã fallback `fileUrl`/`url`/`outputs[].fileUrl`).
-- ▶️ **Chạy thử được ngay**: điền `.env` (cookie + user-agent) rồi `npm run dev`.
+## Trạng thái hiện tại — ✅ ĐÃ CHẠY THẬT (tạo video end-to-end thành công)
+Đã tạo 1 video Seedance thật (video/mp4 1280×720, có audio, ~2MB). Toàn bộ pipeline verify LIVE:
+- QUOTE:  `GET  /api/trpc/modelRouter.getCostQuote` — input `{ modelGroupId: 358, input: { modelId: 2524, ...settings } }` → `{ cost, digitalSignature, timestamp }`
+- CREATE: `POST /api/trpc/userGenerationRouter.createUserGeneration` → `{ success, data: { id } }`
+- STATUS: `GET  /api/trpc/userGenerationRouter.getUserGeneration` — poll tới `status:"completed"` + `videoUrl`
+- ⚠️ `chatSessionId` **PHẢI có sẵn** (session artlist). uuid tự sinh → 404. Lấy từ URL `toolkit.artlist.io/{id}`.
+- Seedance 2.0: **modelGroupId=358**, **modelId=2524** (720p T2V, hỗ trợ audio). Giá ~1200 credits/video.
 
 ## Chạy thử
 ```bash
@@ -37,7 +36,7 @@ curl localhost:3000/health
 curl -X POST localhost:3000/api/videos \
   -H "X-API-Key: <API_KEY của bạn>" \
   -H "content-type: application/json" \
-  -d '{"prompt":"a cat surfing, cinematic","duration":5,"aspectRatio":"16:9"}'
+  -d '{"prompt":"a cat surfing, cinematic","duration":4,"resolution":"720p","aspectRatio":"16:9","chatSessionId":"<id-tu-URL-artlist>"}'
 # → 202 {"jobId":"job_...","status":"processing"}
 
 # Poll trạng thái
@@ -61,7 +60,7 @@ src/
 `/health` trả `sessionValid:false` (hoặc API trả 401 kèm thông báo). Cập nhật
 `ARTLIST_COOKIE` trong `.env` rồi khởi động lại server.
 
-## Việc còn lại để hoàn thiện
-1. Điền `.env` (cookie + `ARTLIST_USER_AGENT`) và **chạy thử local** (cùng IP với trình duyệt).
-2. Gửi lại 1 response `getUserGeneration` lúc video **done** để chốt field URL + giá trị `status`.
-3. (Tuỳ chọn) image-to-video: xác nhận field ảnh trong `inputs`/`artifacts`.
+## Việc còn lại (tuỳ chọn — core đã chạy thật)
+1. Truyền `chatSessionId` có sẵn khi gọi `POST /api/videos` (copy từ URL project trên artlist).
+2. (Tự động hoá) Tìm endpoint tạo chatSession để API tự tạo project mới — nằm ở chunk JS chưa phân tích.
+3. (Tuỳ chọn) image-to-video: xác nhận field ảnh trong `inputs`/`artifacts` + `uploadRouter.getPresignedUrl`.

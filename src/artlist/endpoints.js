@@ -107,7 +107,9 @@ export function resultRequest(providerJobId) {
  * Generation object: { id, status, settings, outputs?[], fileUrl?, fileKey?, ... }.
  */
 export function normalizeStatus(raw) {
-  const node = raw?.result?.data?.json;
+  let node = raw?.result?.data?.json;
+  // Một số procedure bọc kết quả trong { success, data } — unwrap nếu cần.
+  if (node && !Array.isArray(node) && node.id === undefined && node.data !== undefined) node = node.data;
   const gen = Array.isArray(node) ? node[0] : node;
   if (!gen) return {};
   const out = Array.isArray(gen.outputs) ? gen.outputs[0] : gen.output;
@@ -115,11 +117,11 @@ export function normalizeStatus(raw) {
     providerJobId: gen.id,
     status: mapStatus(gen.status),
     progress: gen.progress,
-    // 'fileUrl' là field phổ biến nhất trong bundle (116 chỗ); có thể nằm ở generation hoặc outputs[0].
+    // ✅ Xác nhận từ response done thật: field là `videoUrl`. Fallback fileUrl/url/outputs[].
     videoUrl:
-      gen.fileUrl ?? gen.videoUrl ?? gen.url ??
+      gen.videoUrl ?? gen.fileUrl ?? gen.url ??
       out?.fileUrl ?? out?.url ?? out?.videoUrl,
-    // Nếu chỉ có fileKey (chưa có URL ký sẵn), sẽ cần bước resolve signed URL — xem TODO client.
+    thumbnailUrl: gen.thumbnailUrl ?? out?.thumbnailUrl,
     fileKey: gen.fileKey ?? out?.fileKey,
     error: gen.error ?? gen.failureReason ?? gen.errorMessage,
     raw: gen,
