@@ -11,8 +11,13 @@ replay các HTTP request đã xác thực bằng cookie/token của chính bạn
 - [`docs/CAPTURE_GUIDE.md`](docs/CAPTURE_GUIDE.md) — cách bắt request từ trình duyệt (**làm trước tiên**).
 
 ## Trạng thái hiện tại
-- ✅ Phase 2 — Scaffold: server chạy được, `/health`, config, logger, retry, job manager, routes.
-- ⏳ Phase 1 — Cần bạn bắt 3 request thật rồi điền vào `src/artlist/endpoints.js` (các mục `TODO`) và `.env`.
+- ✅ Pipeline thật đã wire & **verify khớp request captured**: QUOTE → CREATE → POLL.
+  - QUOTE:  `GET  /api/trpc/modelRouter.getCostQuote` → `{cost, digitalSignature, timestamp}`
+  - CREATE: `POST /api/trpc/userGenerationRouter.createUserGeneration` (đính kèm chữ ký)
+  - STATUS: `GET  /api/trpc/userGenerationRouter.getUserGeneration` (poll)
+  - `chatSessionId` tự sinh **UUIDv7** (client-side, không cần request tạo session).
+- ⏳ Cần xác nhận nốt: giá trị `status` khi **done** + field URL video (đã fallback `fileUrl`/`url`/`outputs[].fileUrl`).
+- ▶️ **Chạy thử được ngay**: điền `.env` (cookie + user-agent) rồi `npm run dev`.
 
 ## Chạy thử
 ```bash
@@ -57,5 +62,6 @@ src/
 `ARTLIST_COOKIE` trong `.env` rồi khởi động lại server.
 
 ## Việc còn lại để hoàn thiện
-Xem mục 5 & 10 trong `docs/IMPLEMENTATION_PLAN.md`. Việc kế tiếp: **bắt request**
-(Phase 1) → điền `endpoints.js` + `.env` → test end-to-end.
+1. Điền `.env` (cookie + `ARTLIST_USER_AGENT`) và **chạy thử local** (cùng IP với trình duyệt).
+2. Gửi lại 1 response `getUserGeneration` lúc video **done** để chốt field URL + giá trị `status`.
+3. (Tuỳ chọn) image-to-video: xác nhận field ảnh trong `inputs`/`artifacts`.

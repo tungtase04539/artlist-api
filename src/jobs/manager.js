@@ -1,5 +1,6 @@
 import { config } from '../config.js';
 import { logger } from '../lib/logger.js';
+import { uuidv7 } from '../lib/uuid.js';
 import * as artlist from '../artlist/client.js';
 import { jobStore } from './store.js';
 
@@ -18,11 +19,14 @@ export async function createJob(params) {
     throw err;
   }
 
+  // chatSessionId gom nhiều generation vào 1 "project". Tự sinh UUIDv7 nếu caller không truyền.
+  const p = { ...params, chatSessionId: params.chatSessionId || uuidv7() };
+
   const now = Date.now();
-  const job = jobStore.create(params, now);
+  const job = jobStore.create(p, now);
 
   try {
-    const { providerJobId } = await artlist.submit(params);
+    const { providerJobId } = await artlist.submit(p);
     jobStore.update(job.id, { providerJobId, status: 'processing' }, Date.now());
     // Khởi động poll nền, không await để trả response ngay.
     void pollUntilDone(job.id, providerJobId);
