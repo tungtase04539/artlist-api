@@ -1,0 +1,35 @@
+# Giữ session artlist luôn "ấm": ping /cron/warm định kỳ để cookie tự cuộn (auto-refresh)
+# và đẩy job treo. Endpoint tự throttle (tối đa 1 ping artlist thật / 4 phút) nên an toàn,
+# không cần secret. Lưu ý: lịch (schedule) của GitHub Actions chỉ chạy trên nhánh mặc định
+# (main), và có thể trễ vài phút. Dùng "Run workflow" (workflow_dispatch) để chạy tay/thử.
+name: keep-warm
+
+on:
+  schedule:
+    - cron: '*/12 * * * *' # mỗi ~12 phút
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: keep-warm
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping keep-warm endpoint
+        env:
+          URL: https://artlist-api.vercel.app/cron/warm
+        run: |
+          set -e
+          code=000
+          for i in 1 2 3; do
+            code=$(curl -sS -m 30 -o /tmp/warm.json -w '%{http_code}' -X POST "$URL") && break || sleep 5
+          done
+          echo "HTTP $code"
+          cat /tmp/warm.json || true
+          echo
+          test "$code" = "200"
