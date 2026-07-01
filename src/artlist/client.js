@@ -10,7 +10,12 @@ import {
   normalizeQuote,
   modelGroupsRequest,
   uiConfigRequest,
+  createSessionRequest,
+  normalizeSession,
+  presignRequest,
+  normalizePresign,
 } from './endpoints.js';
+import { uuidv7 } from '../lib/uuid.js';
 
 /**
  * Lớp replay lõi: gọi sang artlist bằng session của bạn.
@@ -52,6 +57,18 @@ export async function getModelGroups() {
 /** Catalog: cấu hình UI (đủ thông số) của 1 model group (raw tRPC json). */
 export async function getUIConfig(modelGroupId) {
   return call(uiConfigRequest(modelGroupId));
+}
+
+/** Tạo chat session artlist mới → trả sessionId. */
+export async function createChatSession(name = 'api') {
+  const id = normalizeSession(await call(createSessionRequest(name, uuidv7())));
+  if (!id) throw new Error('Không tạo được chat session artlist');
+  return id;
+}
+
+/** Xin presigned URL để upload ảnh → { presignedUrl, fileKey, fileUrl }. */
+export async function getPresignedUpload(fileName, fileType) {
+  return normalizePresign(await call(presignRequest({ fileName, fileType })));
 }
 
 /**

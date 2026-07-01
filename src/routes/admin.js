@@ -3,7 +3,7 @@ import { adminAuth } from '../auth/adminAuth.js';
 import { config } from '../config.js';
 import { session } from '../session/session.js';
 import { Clients, ApiKeys, Credits, Jobs, Usage, Alerts } from '../db/repos.js';
-import { sweepStaleJobs } from '../videos/service.js';
+import { sweepStaleJobs, checkSessionHealth } from '../videos/service.js';
 
 const clientSchema = z.object({
   name: z.string().min(1),
@@ -115,6 +115,7 @@ export default async function adminRoutes(app) {
 
   // ── Session artlist (cập nhật cookie lúc chạy) ──
   app.get('/admin/session', async () => ({ session: session.status() }));
+  app.post('/admin/session/check', async () => ({ health: await checkSessionHealth(), session: session.status() }));
   app.post('/admin/session', async (req, reply) => {
     const s = z.object({ cookie: z.string().min(20), userAgent: z.string().optional(), csrf: z.string().optional() }).safeParse(req.body);
     if (!s.success) return reply.code(400).send({ error: 'Cần cookie (chuỗi cookie đầy đủ)' });

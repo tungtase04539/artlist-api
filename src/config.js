@@ -39,6 +39,9 @@ const schema = z.object({
   ABUSE_ERROR_RATE: z.coerce.number().min(0).max(1).default(0.5), // tỉ lệ lỗi cảnh báo
   ABUSE_MIN_EVENTS: z.coerce.number().int().positive().default(20), // số event tối thiểu để xét
   ABUSE_MULTI_IP: z.coerce.number().int().positive().default(4), // số IP/key trong 1h -> nghi rò key
+  ABUSE_AUTO_SUSPEND: z.string().optional().transform((v) => v !== 'false').pipe(z.boolean()), // tự khoá khi cheat giá
+  MAX_CONCURRENT_PER_CLIENT: z.coerce.number().int().positive().default(3), // job đang chạy tối đa/client
+  MAX_IMAGE_MB: z.coerce.number().positive().default(10), // trần dung lượng ảnh upload (image-to-video)
 });
 
 const parsed = schema.safeParse(process.env);

@@ -35,6 +35,27 @@ export function uiConfigRequest(modelGroupId) {
   return { url: trpcQueryUrl('modelRouter.getUIConfig', { modelGroupId }), method: 'GET' };
 }
 
+// ─────────────────────────── Session (auto-create) ───────────────────────────
+// chatSession.createChatSession (mutation) {name, teamId} -> { id }. Tạo session artlist tự động.
+export function createSessionRequest(name, teamId) {
+  return { url: `${base()}/api/trpc/chatSession.createChatSession`, method: 'POST', body: { json: { name, teamId } } };
+}
+export function normalizeSession(raw) {
+  const node = raw?.result?.data?.json;
+  return (node?.data ?? node)?.id;
+}
+
+// ─────────────────────────── Upload (image-to-video) ───────────────────────────
+// uploadRouter.getPresignedUrl {fileName, fileType, expiresIn} -> { presignedUrl, fileKey, fileUrl }.
+export function presignRequest({ fileName, fileType, expiresIn = 3600 }) {
+  return { url: `${base()}/api/trpc/uploadRouter.getPresignedUrl`, method: 'POST', body: { json: { fileName, fileType, expiresIn } } };
+}
+export function normalizePresign(raw) {
+  const node = raw?.result?.data?.json;
+  const d = node?.data ?? node ?? {};
+  return { presignedUrl: d.presignedUrl, fileKey: d.fileKey, fileUrl: d.fileUrl };
+}
+
 // ─────────────────────────── QUOTE ───────────────────────────
 /** @param {import('./types.js').GenerateParams} params */
 export function quoteRequest(params) {

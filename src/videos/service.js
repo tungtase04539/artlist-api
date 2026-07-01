@@ -3,8 +3,10 @@ import { logger } from '../lib/logger.js';
 import { uuidv7 } from '../lib/uuid.js';
 import * as artlist from '../artlist/client.js';
 import * as catalog from '../artlist/catalog.js';
-import { Jobs, Credits } from '../db/repos.js';
+import * as upload from './upload.js';
+import { Jobs, Credits, Clients } from '../db/repos.js';
 import * as monitor from '../abuse/monitor.js';
+import { session } from '../session/session.js';
 
 function err(code, message, extra = {}) {
   const e = new Error(message);
@@ -12,29 +14,53 @@ function err(code, message, extra = {}) {
   Object.assign(e, extra);
   return e;
 }
+const isAuthErr = (e) => e?.status === 401 || e?.status === 403;
+
+/** Session artlist cho client: request → mặc định client → tự tạo (chatSession.createChatSession). */
+async function ensureClientSession(client, provided) {
+  if (provided) return provided;
+  if (client.default_chat_session_id) return client.default_chat_session_id;
+  const id = await artlist.createChatSession(`client-${String(client.id).slice(0, 8)}`);
+  await Clients.setDefaultSession(client.id, id);
+  logger.info({ clientId: client.id, chatSessionId: id }, 'Tự tạo chat session cho client');
+  return id;
+}
 
 /**
- * Tạo video cho client. KHÔNG poll nền (hợp serverless): job để 'processing',
- * tiến độ được đẩy khi client gọi GET /v1/videos/:id (advanceJob) hoặc Cron sweep.
+ * Tạo video cho client (không poll nền). Hỗ trợ text-to-video & image-to-video (upload ảnh).
+ * chatSessionId tự tạo nếu chưa có. Trừ credits theo giá quote thật; hoàn nếu lỗi.
  */
 export async function createVideo(client, params, ip) {
   const groupId = Number(params.modelGroupId ?? 358);
-  const chatSessionId = params.chatSessionId || client.default_chat_session_id;
-
   if (!(await catalog.isVideoModel(groupId))) throw err('INVALID_MODEL', 'modelGroupId không phải model video hợp lệ (GET /v1/models).');
-  if (!chatSessionId) throw err('NO_SESSION', 'Thiếu chatSessionId và client chưa được admin gán session mặc định.');
 
+  if ((await Jobs.countActiveByClient(client.id)) >= config.MAX_CONCURRENT_PER_CLIENT) {
+    throw err('RATE_LIMITED', `Đang có quá nhiều job chạy đồng thời (tối đa ${config.MAX_CONCURRENT_PER_CLIENT}).`);
+  }
   const rl = await monitor.allowCreate(client);
   if (!rl.allowed) throw err('RATE_LIMITED', rl.message);
 
+  // Session (tự tạo nếu cần) + image-to-video (upload ảnh).
+  let chatSessionId, genParams;
+  try {
+    chatSessionId = await ensureClientSession(client, params.chatSessionId);
+    genParams = params;
+    if (params.image) {
+      const fileUrl = await upload.uploadImageFromUrl(params.image);
+      genParams = { ...params, settings: { ...(params.settings || {}), image_url: fileUrl }, feature: params.feature || 'image-to-video' };
+    }
+  } catch (e) {
+    if (isAuthErr(e)) { await monitor.noteSessionExpired(`HTTP ${e.status}`); throw err('SESSION_EXPIRED', 'Dịch vụ tạm gián đoạn (session nguồn hết hạn).'); }
+    if (String(e.message || '').includes('ảnh')) throw err('IMAGE_ERROR', e.message);
+    throw e;
+  }
+
+  // Quote (server resolve model + giá + chữ ký).
   let quote;
   try {
-    quote = await artlist.getCostQuote({ ...params, modelGroupId: groupId });
+    quote = await artlist.getCostQuote({ ...genParams, modelGroupId: groupId });
   } catch (e) {
-    if (e.status === 401 || e.status === 403) {
-      await monitor.noteSessionExpired(`HTTP ${e.status}`);
-      throw err('SESSION_EXPIRED', 'Dịch vụ tạm gián đoạn (session nguồn hết hạn).');
-    }
+    if (isAuthErr(e)) { await monitor.noteSessionExpired(`HTTP ${e.status}`); throw err('SESSION_EXPIRED', 'Dịch vụ tạm gián đoạn (session nguồn hết hạn).'); }
     throw e;
   }
   const price = quote.price;
@@ -55,7 +81,7 @@ export async function createVideo(client, params, ip) {
   }
 
   const jobId = uuidv7();
-  await Jobs.create({ id: jobId, clientId: client.id, prompt: params.prompt ?? params.settings?.prompt, params, price });
+  await Jobs.create({ id: jobId, clientId: client.id, prompt: genParams.prompt ?? genParams.settings?.prompt, params: genParams, price });
   const deduct = await Credits.change(client.id, -price, 'usage', jobId);
   if (!deduct.ok) {
     await Jobs.update(jobId, { status: 'failed', error: 'Không đủ credits (race)' });
@@ -64,36 +90,27 @@ export async function createVideo(client, params, ip) {
   await monitor.noteCreate(client, ip, { modelGroupId: groupId, price });
 
   try {
-    const { providerJobId } = await artlist.createGeneration({ ...params, ...quote, chatSessionId, modelGroupId: groupId });
+    const { providerJobId } = await artlist.createGeneration({ ...genParams, ...quote, chatSessionId, modelGroupId: groupId });
     return await Jobs.update(jobId, { provider_job_id: providerJobId, status: 'processing' });
   } catch (e) {
     await Credits.change(client.id, price, 'refund', jobId);
     await Jobs.update(jobId, { status: 'failed', refunded: true, error: String(e.message || e) });
-    if (e.status === 401 || e.status === 403) await monitor.noteSessionExpired(`HTTP ${e.status}`);
+    if (isAuthErr(e)) await monitor.noteSessionExpired(`HTTP ${e.status}`);
     throw err('CREATE_FAILED', 'Tạo video thất bại (đã hoàn credits).', { cause: String(e.message || e) });
   }
 }
 
-/**
- * Đẩy 1 job đang chạy: hỏi artlist status 1 lần → cập nhật done/failed (hoàn credits nếu lỗi).
- * Idempotent — gọi từ GET /v1/videos/:id và từ Cron sweep.
- */
+/** Đẩy 1 job đang chạy: hỏi artlist status 1 lần → done/failed (hoàn credits nếu lỗi). Idempotent. */
 export async function advanceJob(job) {
   if (!job || !['pending', 'processing'].includes(job.status) || !job.provider_job_id) return job;
-
-  // Quá hạn → hoàn tiền, đánh dấu failed.
-  if (Date.now() - Number(job.created_at) > config.POLL_TIMEOUT_MS) {
-    return refund(job, 'timeout');
-  }
+  if (Date.now() - Number(job.created_at) > config.POLL_TIMEOUT_MS) return refund(job, 'timeout');
   try {
     const s = await artlist.status(job.provider_job_id);
-    if (s.status === 'done' || s.videoUrl) {
-      return await Jobs.update(job.id, { status: 'done', video_url: s.videoUrl, thumbnail_url: s.thumbnailUrl });
-    }
+    if (s.status === 'done' || s.videoUrl) return await Jobs.update(job.id, { status: 'done', video_url: s.videoUrl, thumbnail_url: s.thumbnailUrl });
     if (s.status === 'failed') return refund(job, s.error || 'artlist failed');
-    return await Jobs.update(job.id, { status: 'processing' }); // touch updated_at
+    return await Jobs.update(job.id, { status: 'processing' });
   } catch (e) {
-    if (e.status === 401 || e.status === 403) await monitor.noteSessionExpired(`HTTP ${e.status}`);
+    if (isAuthErr(e)) await monitor.noteSessionExpired(`HTTP ${e.status}`);
     logger.warn({ jobId: job.id, err: String(e) }, 'advanceJob lỗi');
     return job;
   }
@@ -104,11 +121,29 @@ async function refund(job, error) {
   return Jobs.update(job.id, { status: 'failed', refunded: true, error });
 }
 
-/** Cron: đẩy các job đã "im" quá interval (client ngừng poll). Trả số job đã xử lý. */
+/** Cron: đẩy các job đã "im" quá interval. */
 export async function sweepStaleJobs(olderThanMs = 15_000) {
   const jobs = await Jobs.listProcessing(olderThanMs);
   for (const j of jobs) await advanceJob(j);
   return jobs.length;
+}
+
+/** Kiểm tra sức khoẻ session artlist (auto-detect hết hạn → cảnh báo). */
+export async function checkSessionHealth() {
+  if (!session.isReady()) return { ok: false, reason: 'no_credentials' };
+  try {
+    await artlist.getModelGroups();
+    session.valid = true;
+    session.invalidReason = null;
+    return { ok: true };
+  } catch (e) {
+    if (isAuthErr(e)) {
+      session.markInvalid(`HTTP ${e.status}`);
+      await monitor.noteSessionExpired(`healthcheck HTTP ${e.status}`);
+      return { ok: false, status: e.status };
+    }
+    return { ok: false, error: String(e.message) };
+  }
 }
 
 export function publicJob(job) {

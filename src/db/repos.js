@@ -128,6 +128,9 @@ export const Jobs = {
   async listByClient(clientId, limit = 100) {
     return (await query('SELECT * FROM jobs WHERE client_id=$1 ORDER BY created_at DESC LIMIT $2', [clientId, limit])).rows;
   },
+  async countActiveByClient(clientId) {
+    return one(await query(`SELECT COUNT(*)::int n FROM jobs WHERE client_id=$1 AND status IN ('pending','processing')`, [clientId])).n;
+  },
   async listProcessing(olderThanMs = 0, limit = 100) {
     return (await query(
       `SELECT * FROM jobs WHERE status IN ('pending','processing') AND updated_at <= $1 ORDER BY updated_at ASC LIMIT $2`,

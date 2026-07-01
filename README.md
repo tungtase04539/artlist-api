@@ -88,7 +88,10 @@ curl localhost:3000/v1/videos/<jobId> -H "x-api-key: $K"
 ```
 - Giá **thật** tính theo `modelGroupId + settings` (server artlist resolve model + báo giá). `resolution:1080p` → model & giá khác `720p`.
 - `maxCredits`: trần giá (từ chối nếu quote vượt). `expectedCredits`: giá bạn dự tính (lệch → từ chối, chống nhầm/cheat).
-- `chatSessionId`: **session artlist có sẵn**. Có thể bỏ trống nếu admin đã gán **session mặc định** cho client (`POST /admin/clients/:id/session`); nếu không, client tự truyền. (Auto-tạo session đang nghiên cứu.)
+- `chatSessionId`: **tuỳ chọn** — nếu bỏ trống, API **tự tạo session** (chatSession.createChatSession) và lưu làm mặc định cho client (các job sau tái dùng). Admin cũng có thể gán sẵn qua `POST /admin/clients/:id/session`.
+- **Image-to-video**: gửi `image` = URL ảnh (png/jpg/webp, ≤ `MAX_IMAGE_MB`). API tải ảnh → upload lên artlist (presigned S3) → set `image_url` + `feature=image-to-video` tự động.
+- **Chống cheat**: gửi `expectedCredits` lệch giá thật → **tự khoá client** (`ABUSE_AUTO_SUSPEND`). Concurrency tối đa `MAX_CONCURRENT_PER_CLIENT` job/client.
+- **Session health**: Cron `/cron/sweep` + `POST /admin/session/check` tự phát hiện cookie hết hạn → cảnh báo `session_expired`.
 
 ## Hạn mức & billing
 - Mỗi client có **số dư credits** (admin nạp). Tạo video trừ theo **giá quote thật**; **hoàn credits** nếu create/poll thất bại.

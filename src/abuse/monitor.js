@@ -1,6 +1,6 @@
 import { config } from '../config.js';
 import { logger } from '../lib/logger.js';
-import { Usage, Alerts } from '../db/repos.js';
+import { Usage, Alerts, Clients } from '../db/repos.js';
 
 /**
  * Giám sát sử dụng + phát hiện lạm dụng/cheat. Ghi usage_events, dựng alerts (dedup qua DB),
@@ -65,6 +65,10 @@ export async function noteQuotaBlock(client, { needed, balance, ip = null } = {}
 export async function notePriceMismatch(client, { claimed, actual, ip = null } = {}) {
   await Usage.record({ clientId: client.id, type: 'error', ip, meta: { claimed, actual, reason: 'price_mismatch' } });
   await raise({ clientId: client.id, severity: 'critical', kind: 'price_mismatch', message: `Giá gửi (${claimed}) khác giá quote thật (${actual}) — cố cheat giá`, meta: { claimed, actual } });
+  if (config.ABUSE_AUTO_SUSPEND) {
+    await Clients.setStatus(client.id, 'suspended');
+    await raise({ clientId: client.id, severity: 'critical', kind: 'auto_suspend', message: 'Đã TỰ KHOÁ client do cố cheat giá', meta: { claimed, actual } });
+  }
 }
 
 export async function noteSessionExpired(reason) {
