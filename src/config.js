@@ -52,6 +52,9 @@ const schema = z.object({
   TELEGRAM_CHAT_ID: z.string().optional(), // chat/nhóm nhận cảnh báo
   DASHBOARD_URL: z.string().url().optional(), // chèn link dashboard vào nội dung cảnh báo
   ALERT_PUSH_KINDS: z.string().optional().default('session_expired,auto_suspend,price_mismatch'), // loại nào thì đẩy
+
+  // Log sự kiện: giữ lại bao nhiêu ngày (cron tự dọn để bảng không phình).
+  LOG_RETENTION_DAYS: z.coerce.number().int().positive().default(7),
 });
 
 const parsed = schema.safeParse(process.env);

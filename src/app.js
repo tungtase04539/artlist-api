@@ -2,10 +2,14 @@ import Fastify from 'fastify';
 import { logger } from './lib/logger.js';
 import { ready } from './db/db.js';
 import { session } from './session/session.js';
+import { logEvent } from './lib/events.js';
 import v1Routes from './routes/v1.js';
 import adminRoutes from './routes/admin.js';
 import docsRoutes from './routes/docs.js';
 import systemRoutes from './routes/system.js';
+
+// Không log HTTP cho các path tĩnh/ồn (health, docs, dashboard...) — tránh nhiễu.
+const SKIP_HTTP_LOG = new Set(['/health', '/openapi.json', '/docs', '/dashboard', '/guide', '/favicon.ico']);
 
 /** Dựng Fastify app (dùng chung cho standalone `src/index.js` và serverless `api/index.js`). */
 export async function buildApp() {
@@ -21,6 +25,31 @@ export async function buildApp() {
     reply.header('x-content-type-options', 'nosniff');
     reply.header('x-frame-options', 'DENY');
     reply.header('referrer-policy', 'no-referrer');
+  });
+
+  // ── Ghi log mọi HTTP (trừ path tĩnh) với latency + status ──
+  app.addHook('onRequest', async (req) => { req.startTime = Date.now(); });
+  app.addHook('onResponse', async (req, reply) => {
+    const path = String(req.url).split('?')[0];
+    if (SKIP_HTTP_LOG.has(path)) return;
+    const status = reply.statusCode;
+    await logEvent({
+      level: status >= 500 ? 'error' : status >= 400 ? 'warn' : 'info',
+      category: 'http', event: `${req.method} ${path}`,
+      clientId: req.client?.id ?? null, requestId: req.id, method: req.method, path,
+      statusCode: status, durationMs: Date.now() - (req.startTime || Date.now()), ip: req.realIp ?? req.ip,
+    });
+  });
+
+  // Lỗi chưa bắt → ghi log rồi trả lỗi gọn (không lộ nội bộ).
+  app.setErrorHandler(async (err, req, reply) => {
+    const status = err.statusCode && err.statusCode >= 400 ? err.statusCode : 500;
+    await logEvent({
+      level: 'error', category: 'error', event: 'unhandled',
+      clientId: req.client?.id ?? null, requestId: req.id, method: req.method, path: String(req.url).split('?')[0],
+      statusCode: status, ip: req.realIp ?? req.ip, message: String(err.message), meta: { code: err.code },
+    });
+    reply.code(status).send({ error: status < 500 ? err.message : 'Lỗi máy chủ', code: err.code || 'ERROR' });
   });
 
   app.get('/health', async () => ({ status: 'ok', session: session.status() }));

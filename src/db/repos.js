@@ -217,3 +217,49 @@ export const Settings = {
     );
   },
 };
+
+// ─────────────────────────── Event log (đọc lại để soi bất thường) ───────────────────────────
+export const Events = {
+  async add(e = {}) {
+    await query(
+      `INSERT INTO event_log(ts,level,category,event,client_id,job_id,request_id,method,path,status_code,duration_ms,ip,message,meta_json)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+      [
+        e.ts ?? now(), e.level ?? 'info', e.category ?? 'system', String(e.event ?? '').slice(0, 120),
+        e.clientId ?? null, e.jobId ?? null, e.requestId ?? null, e.method ?? null,
+        e.path ? String(e.path).slice(0, 200) : null, e.statusCode ?? null, e.durationMs ?? null, e.ip ?? null,
+        e.message ? String(e.message).slice(0, 500) : null, e.meta ? JSON.stringify(e.meta).slice(0, 4000) : null,
+      ],
+    );
+  },
+  async list({ level, category, clientId, event, since, until, statusMin, limit = 200 } = {}) {
+    const w = []; const p = []; let i = 1;
+    if (level) { w.push(`level=$${i++}`); p.push(level); }
+    if (category) { w.push(`category=$${i++}`); p.push(category); }
+    if (clientId) { w.push(`client_id=$${i++}`); p.push(clientId); }
+    if (event) { w.push(`event ILIKE $${i++}`); p.push(`%${event}%`); }
+    if (since) { w.push(`ts>=$${i++}`); p.push(Number(since)); }
+    if (until) { w.push(`ts<=$${i++}`); p.push(Number(until)); }
+    if (statusMin) { w.push(`status_code>=$${i++}`); p.push(Number(statusMin)); }
+    const where = w.length ? `WHERE ${w.join(' AND ')}` : '';
+    p.push(Math.min(Number(limit) || 200, 1000));
+    return (await query(`SELECT * FROM event_log ${where} ORDER BY id DESC LIMIT $${i}`, p)).rows;
+  },
+  async summary(sinceMs = 3_600_000) {
+    const since = now() - sinceMs;
+    const rows = (q, params = [since]) => query(q, params).then((r) => r.rows);
+    const [byLevel, byCat, httpStatus, recentErrors, slowest, upstream] = await Promise.all([
+      rows(`SELECT level, COUNT(*)::int n FROM event_log WHERE ts>=$1 GROUP BY level`),
+      rows(`SELECT category, COUNT(*)::int n FROM event_log WHERE ts>=$1 GROUP BY category ORDER BY n DESC`),
+      rows(`SELECT status_code, COUNT(*)::int n FROM event_log WHERE ts>=$1 AND category='http' AND status_code IS NOT NULL GROUP BY status_code ORDER BY n DESC`),
+      rows(`SELECT ts,category,event,path,status_code,client_id,message FROM event_log WHERE ts>=$1 AND level='error' ORDER BY id DESC LIMIT 30`),
+      rows(`SELECT ts,method,path,duration_ms,status_code FROM event_log WHERE ts>=$1 AND category='http' AND duration_ms IS NOT NULL ORDER BY duration_ms DESC LIMIT 10`),
+      rows(`SELECT COUNT(*)::int n FROM event_log WHERE ts>=$1 AND category='artlist' AND level IN ('warn','error')`),
+    ]);
+    return { windowMs: sinceMs, byLevel, byCategory: byCat, httpStatus, upstreamErrors: upstream[0]?.n ?? 0, recentErrors, slowestHttp: slowest };
+  },
+  async prune(olderThanMs) {
+    const r = await query(`DELETE FROM event_log WHERE ts < $1`, [now() - olderThanMs]);
+    return r.rowCount ?? r.affectedRows ?? 0; // pg dùng rowCount, PGlite dùng affectedRows
+  },
+};

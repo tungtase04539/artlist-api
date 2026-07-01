@@ -136,4 +136,27 @@ async function migrate() {
     value text NOT NULL,
     updated_at bigint NOT NULL
   )`);
+
+  // Log sự kiện có cấu trúc: HTTP, call artlist, job, credit, session, abuse, error.
+  // Đọc lại để phát hiện bất thường (GET /admin/logs, /admin/logs/summary).
+  await _q(`CREATE TABLE IF NOT EXISTS event_log (
+    id bigserial PRIMARY KEY,
+    ts bigint NOT NULL,
+    level text NOT NULL,
+    category text NOT NULL,
+    event text NOT NULL,
+    client_id text,
+    job_id text,
+    request_id text,
+    method text,
+    path text,
+    status_code integer,
+    duration_ms integer,
+    ip text,
+    message text,
+    meta_json text
+  )`);
+  await _q(`CREATE INDEX IF NOT EXISTS idx_event_ts ON event_log(ts)`);
+  await _q(`CREATE INDEX IF NOT EXISTS idx_event_cat ON event_log(category, ts)`);
+  await _q(`CREATE INDEX IF NOT EXISTS idx_event_level ON event_log(level, ts)`);
 }

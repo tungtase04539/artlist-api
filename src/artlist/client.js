@@ -18,6 +18,7 @@ import {
   normalizeReadUrl,
 } from './endpoints.js';
 import { uuidv7 } from '../lib/uuid.js';
+import { logEvent } from '../lib/events.js';
 
 /**
  * Lớp replay lõi: gọi sang artlist bằng session của bạn.
@@ -30,6 +31,8 @@ async function call({ url, method, body }) {
   await session.ensureFresh();
   session.assertValid();
 
+  const started = Date.now();
+  const proc = String(url).split('/api/trpc/')[1]?.split('?')[0] || url;
   const res = await fetchWithRetry(url, {
     method,
     headers: { ...session.browserHeaders(), ...session.authHeaders() },
@@ -40,6 +43,12 @@ async function call({ url, method, body }) {
   try { if (session.mergeSetCookie(res.headers.getSetCookie?.())) await session.persist(); } catch { /* noop */ }
 
   const text = await res.text();
+  // Log call artlist (fire-and-forget; công việc await sau đó giữ event loop sống để flush).
+  logEvent({
+    level: res.ok ? 'info' : res.status >= 500 ? 'error' : 'warn',
+    category: 'artlist', event: proc, method, statusCode: res.status, durationMs: Date.now() - started,
+    ...(res.ok ? {} : { message: text.slice(0, 200) }),
+  }).catch(() => {});
 
   if (res.status === 401 || res.status === 403) {
     session.markInvalid(`HTTP ${res.status}`);

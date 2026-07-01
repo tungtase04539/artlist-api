@@ -7,6 +7,7 @@ import * as upload from './upload.js';
 import { Jobs, Credits, Clients } from '../db/repos.js';
 import * as monitor from '../abuse/monitor.js';
 import { session } from '../session/session.js';
+import { logEvent } from '../lib/events.js';
 
 function err(code, message, extra = {}) {
   const e = new Error(message);
@@ -143,10 +144,12 @@ export async function createVideo(client, params, ip) {
 
   try {
     const { providerJobId } = await artlist.createGeneration({ ...genParams, ...quote, chatSessionId, modelGroupId: groupId });
+    logEvent({ level: 'info', category: 'job', event: 'created', clientId: client.id, jobId, meta: { modelGroupId: groupId, price, media: media.artifacts.length } }).catch(() => {});
     return await Jobs.update(jobId, { provider_job_id: providerJobId, status: 'processing' });
   } catch (e) {
     await Credits.change(client.id, price, 'refund', jobId);
     await Jobs.update(jobId, { status: 'failed', refunded: true, error: String(e.message || e) });
+    logEvent({ level: 'error', category: 'job', event: 'create_failed', clientId: client.id, jobId, message: String(e.message || e), meta: { price, refunded: true } }).catch(() => {});
     if (isAuthErr(e)) await monitor.noteSessionExpired(`HTTP ${e.status}`);
     throw err('CREATE_FAILED', 'Tạo video thất bại (đã hoàn credits).', { cause: String(e.message || e) });
   }
@@ -162,6 +165,7 @@ export async function advanceJob(job) {
     //    và mở được ở bất cứ đâu KHÔNG cần cookie → lưu & trả NGUYÊN VĂN (đừng cắt query string!).
     //    thumbnailUrl nằm ở CDN public. output_file_key chỉ lưu để tra cứu.
     if (s.status === 'done' || s.videoUrl) {
+      logEvent({ level: 'info', category: 'job', event: 'done', clientId: job.client_id, jobId: job.id, durationMs: Date.now() - Number(job.created_at), meta: { credits: job.price } }).catch(() => {});
       return await Jobs.update(job.id, {
         status: 'done', video_url: s.videoUrl, thumbnail_url: s.thumbnailUrl,
         output_file_key: s.fileKey, thumbnail_file_key: s.thumbnailKey,
@@ -178,6 +182,7 @@ export async function advanceJob(job) {
 
 async function refund(job, error) {
   if (!job.refunded) await Credits.change(job.client_id, job.price, 'refund', job.id);
+  logEvent({ level: 'warn', category: 'job', event: 'failed', clientId: job.client_id, jobId: job.id, message: String(error), meta: { credits: job.price, refunded: true } }).catch(() => {});
   return Jobs.update(job.id, { status: 'failed', refunded: true, error });
 }
 

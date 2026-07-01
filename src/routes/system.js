@@ -1,6 +1,6 @@
 import { config } from '../config.js';
 import { sweepStaleJobs, checkSessionHealth } from '../videos/service.js';
-import { Settings } from '../db/repos.js';
+import { Settings, Events } from '../db/repos.js';
 
 const WARM_THROTTLE_MS = 4 * 60 * 1000; // tối đa 1 lần ping artlist thật mỗi 4 phút
 
@@ -28,6 +28,7 @@ export default async function systemRoutes(app) {
     if (now - last < WARM_THROTTLE_MS) return { ok: true, skipped: true, nextInSec: Math.ceil((WARM_THROTTLE_MS - (now - last)) / 1000) };
     await Settings.set('last_warm_at', String(now)); // đặt trước để thu hẹp cửa sổ race giữa các instance
     const [health, swept] = await Promise.all([checkSessionHealth(), sweepStaleJobs(15000)]);
-    return { ok: health.ok === true, warmed: true, swept };
+    const prunedLogs = await Events.prune(config.LOG_RETENTION_DAYS * 86_400_000).catch(() => 0); // dọn log cũ
+    return { ok: health.ok === true, warmed: true, swept, prunedLogs };
   });
 }

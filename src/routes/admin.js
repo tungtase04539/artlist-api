@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { adminAuth } from '../auth/adminAuth.js';
 import { config } from '../config.js';
 import { session } from '../session/session.js';
-import { Clients, ApiKeys, Credits, Jobs, Usage, Alerts } from '../db/repos.js';
+import { Clients, ApiKeys, Credits, Jobs, Usage, Alerts, Events } from '../db/repos.js';
 import { sweepStaleJobs, checkSessionHealth } from '../videos/service.js';
 import { pushAlert } from '../lib/notify.js';
 
@@ -90,6 +90,18 @@ export default async function adminRoutes(app) {
     await ApiKeys.revoke(req.params.keyId);
     return { revoked: req.params.keyId };
   });
+
+  // ── Event log (đọc lại để soi bất thường) ──
+  // Lọc: ?level=error&category=http|artlist|job|credit|session|abuse|error&clientId=&event=&since=&until=&statusMin=&limit=
+  app.get('/admin/logs', async (req) => ({
+    events: await Events.list({
+      level: req.query?.level, category: req.query?.category, clientId: req.query?.clientId, event: req.query?.event,
+      since: req.query?.since, until: req.query?.until, statusMin: req.query?.statusMin, limit: req.query?.limit,
+    }),
+  }));
+  // Tổng hợp bất thường trong N giờ gần nhất (mặc định 1h): đếm theo level/category, HTTP status,
+  // lỗi upstream artlist, danh sách lỗi gần đây, request chậm nhất.
+  app.get('/admin/logs/summary', async (req) => Events.summary(Math.max(1, Number(req.query?.hours) || 1) * 3_600_000));
 
   // ── Usage / Alerts / Stats ──
   app.get('/admin/usage', async (req) => ({ events: await Usage.recent(Number(req.query?.limit) || 200) }));
