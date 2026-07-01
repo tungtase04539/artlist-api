@@ -84,10 +84,10 @@ curl -X POST localhost:3000/v1/videos -H "x-api-key: $K" -H 'content-type: appli
 
 # Poll trạng thái
 curl localhost:3000/v1/videos/<jobId> -H "x-api-key: $K"
-# → {"status":"done","videoUrl":"https://...mp4?Expires=...&Signature=...&Key-Pair-Id=...","thumbnailUrl":"...","credits":1200}
+# → {"status":"done","videoUrl":"https://...mp4?Expires=...&Key-Pair-Id=...&Signature=...","thumbnailUrl":"...","credits":1200}
 ```
-- **`videoUrl` là link ĐÃ KÝ CloudFront** (query `Signature`/`Key-Pair-Id`), tải/xem được ở bất cứ đâu. URL thô artlist trả về (không ký) chỉ chạy trong trình duyệt đã đăng nhập — sẽ báo `MissingKey` nếu mở trực tiếp; API tự ký lại từ `fileKey` (`getPresignedUrlFromKey`) khi job hoàn thành.
-- Link ký **sống ~3 ngày**. Cứ **GET lại `/v1/videos/<jobId>`** khi cần link mới — API tự ký lại nếu URL cũ sắp hết hạn.
+- **`videoUrl` là link CloudFront ĐÃ KÝ SẴN** (`Expires` + `Key-Pair-Id` + `Signature`), mở/tải được **mọi nơi, không cần cookie**, hạn **~10 năm**. Trả về **nguyên văn**.
+- ⚠️ Phải giữ **cả query string**. Nếu cắt bớt `Key-Pair-Id`/`Signature` (vd chỉ copy tới `.mp4`), CloudFront trả `MissingKey — Missing Key-Pair-Id`.
 - Giá **thật** tính theo `modelGroupId + settings` (server artlist resolve model + báo giá). `resolution:1080p` → model & giá khác `720p`.
 - `maxCredits`: trần giá (từ chối nếu quote vượt). `expectedCredits`: giá bạn dự tính (lệch → từ chối, chống nhầm/cheat).
 - `chatSessionId`: **tuỳ chọn** — nếu bỏ trống, API **tự tạo session** (chatSession.createChatSession) và lưu làm mặc định cho client (các job sau tái dùng). Admin cũng có thể gán sẵn qua `POST /admin/clients/:id/session`.

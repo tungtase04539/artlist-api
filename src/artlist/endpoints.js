@@ -40,9 +40,9 @@ export function normalizePresign(raw) {
   return { presignedUrl: d.presignedUrl, fileKey: d.fileKey, fileUrl: d.fileUrl };
 }
 /**
- * GET-url ĐỌC ĐƯỢC (đã ký CloudFront) từ fileKey.
- * Bắt buộc cho cả (a) media đầu vào để model đọc, và (b) video KẾT QUẢ để trả cho client —
- * bucket artifacts được CloudFront bảo vệ, url thô chỉ chạy trong trình duyệt đã đăng nhập.
+ * GET-url ĐỌC ĐƯỢC từ fileKey cho MEDIA ĐẦU VÀO (bucket uploads) — để model đọc ảnh/video/audio.
+ * ⚠️ CHỈ dùng cho input. Video KẾT QUẢ nằm ở bucket artifacts khác: dùng thẳng `videoUrl`
+ *    trong response (đã ký CloudFront sẵn), KHÔNG ký lại bằng endpoint này (sai bucket → 403).
  */
 export function presignFromKeyRequest(fileKey, expiresIn = 259200) {
   return { url: `${base()}/api/trpc/uploadRouter.getPresignedUrlFromKey`, method: 'POST', body: { json: { fileKey, expiresIn } } };
@@ -93,8 +93,7 @@ export function normalizeStatus(raw) {
     providerJobId: gen.id,
     status: mapStatus(gen.status),
     progress: gen.progress,
-    // ⚠️ url thô (fileUrl/imgixUrl) KHÔNG ký CloudFront → chỉ chạy trong trình duyệt đã đăng nhập.
-    // Ưu tiên trả về fileKey để service tự ký (getPresignedUrlFromKey) trước khi đưa cho client.
+    // videoUrl ĐÃ ký CloudFront sẵn (Expires+Key-Pair-Id+Signature) → giữ NGUYÊN VĂN, mở được mọi nơi.
     videoUrl: gen.videoUrl ?? gen.fileUrl ?? gen.url ?? out?.fileUrl ?? out?.url ?? out?.videoUrl ?? asset?.fileUrl,
     thumbnailUrl: gen.thumbnailUrl ?? out?.thumbnailUrl ?? asset?.thumbnailUrl,
     fileKey: gen.fileKey ?? out?.fileKey ?? asset?.fileKey,

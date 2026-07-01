@@ -68,8 +68,7 @@ export default async function v1Routes(app) {
     let job = await Jobs.get(req.params.id);
     if (!job || job.client_id !== req.client.id) return reply.code(404).send({ error: 'Không tìm thấy job' });
     if (['pending', 'processing'].includes(job.status)) job = await service.advanceJob(job);
-    else if (job.status === 'done') job = await service.ensureFreshUrl(job); // ký lại url CloudFront nếu gần hết hạn
-    return service.publicJob(job);
+    return service.publicJob(job); // job done: video_url đã là link CloudFront ký sẵn (hạn ~10 năm)
   });
 
   app.get('/v1/videos', async (req) => (await Jobs.listByClient(req.client.id, 100)).map(service.publicJob));

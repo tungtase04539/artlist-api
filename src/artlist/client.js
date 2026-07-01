@@ -76,7 +76,7 @@ export async function getPresignedUpload(fileName, fileType) {
   return normalizePresign(await call(presignRequest({ fileName, fileType })));
 }
 
-/** GET-url ĐỌC ĐƯỢC (đã ký CloudFront) từ fileKey — cho media đầu vào & video kết quả. */
+/** GET-url ĐỌC ĐƯỢC từ fileKey cho MEDIA ĐẦU VÀO (bucket uploads). Không dùng cho video kết quả. */
 export async function getReadableUrl(fileKey, expiresIn = 259200) {
   return normalizeReadUrl(await call(presignFromKeyRequest(fileKey, expiresIn)));
 }

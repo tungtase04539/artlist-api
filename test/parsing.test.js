@@ -68,28 +68,27 @@ test('normalizeStatus: response done THẬT (video đã tạo) → done + videoU
   assert.ok(s.thumbnailUrl.includes('.jpg'));
 });
 
-test('normalizeStatus: done → LẤY ĐƯỢC output fileKey/thumbnailKey để ký lại url CloudFront', () => {
-  // Video kết quả nằm ở bucket artifacts (CloudFront) — url thô báo MissingKey, phải ký từ fileKey.
+test('normalizeStatus: videoUrl đã ký CloudFront được GIỮ NGUYÊN VĂN (không cắt query)', () => {
+  // Video kết quả artlist trả về đã có Expires+Key-Pair-Id+Signature — phải trả nguyên (cắt => MissingKey).
+  const signed = 'https://cms-toolkit-artifacts.artlist.io/content/x/out-abc.mp4?Expires=2098281784&Key-Pair-Id=K2ZDLYDZI2R1DF&Signature=nXQ4eN~apdLDsIMt__';
   const realDone = { result: { data: { json: [ {
-    id: 'g1', status: 'completed',
-    assetFileInfo: {
-      fileUrl: 'https://cms-toolkit-artifacts.artlist.io/out.mp4?Expires=2098828892',
-      thumbnailUrl: 'https://cms-toolkit-public-artifacts.artlist.io/t.jpg',
-      fileKey: 'content/out.mp4',
-    },
-    thumbnailFileKey: 'content/t.jpg',
+    id: 'g1', status: 'completed', videoUrl: signed,
+    fileKey: 'abc', thumbnailKey: 'def',
+    thumbnailUrl: 'https://cms-toolkit-public-artifacts.artlist.io/t.jpg',
   } ] } } };
   const s = ep.normalizeStatus(realDone);
   assert.equal(s.status, 'done');
-  assert.equal(s.fileKey, 'content/out.mp4');       // dùng để getPresignedUrlFromKey
-  assert.equal(s.thumbnailKey, 'content/t.jpg');
+  assert.equal(s.videoUrl, signed);          // NGUYÊN VĂN, còn đủ Key-Pair-Id & Signature
+  assert.ok(s.videoUrl.includes('Key-Pair-Id=') && s.videoUrl.includes('Signature='));
+  assert.equal(s.fileKey, 'abc');            // lưu để tra cứu (KHÔNG dùng ký lại)
+  assert.equal(s.thumbnailKey, 'def');
 });
 
-test('presignFromKeyRequest: gửi fileKey + expiresIn (ký url đọc được)', () => {
-  const r = ep.presignFromKeyRequest('content/out.mp4');
+test('presignFromKeyRequest: CHỈ cho media đầu vào — gửi fileKey + expiresIn', () => {
+  const r = ep.presignFromKeyRequest('uploads/input.png');
   assert.equal(r.method, 'POST');
   assert.ok(r.url.endsWith('/api/trpc/uploadRouter.getPresignedUrlFromKey'));
-  assert.deepEqual(r.body.json, { fileKey: 'content/out.mp4', expiresIn: 259200 });
+  assert.deepEqual(r.body.json, { fileKey: 'uploads/input.png', expiresIn: 259200 });
 });
 
 test('normalizeQuote: map cost/digitalSignature/timestamp (envelope {success,data})', () => {
