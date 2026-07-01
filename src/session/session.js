@@ -26,11 +26,14 @@ class Session {
   /** Header giả trình duyệt cơ bản (bổ sung/điều chỉnh theo cURL bắt được). */
   browserHeaders() {
     return {
-      'accept': 'application/json, text/plain, */*',
+      'accept': '*/*',
       'accept-language': 'en-US,en;q=0.9',
       'content-type': 'application/json',
       'origin': config.ARTLIST_BASE_URL || '',
+      'x-trpc-source': 'nextjs-react',
+      // ⚠️ UA PHẢI khớp trình duyệt đã tạo cookie cf_clearance — sai UA là Cloudflare chặn.
       'user-agent':
+        config.ARTLIST_USER_AGENT ||
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
     };
   }

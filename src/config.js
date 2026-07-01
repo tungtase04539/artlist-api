@@ -14,6 +14,7 @@ const schema = z.object({
   ARTLIST_COOKIE: z.string().optional(),
   ARTLIST_AUTH_TOKEN: z.string().optional(),
   ARTLIST_CSRF_TOKEN: z.string().optional(),
+  ARTLIST_USER_AGENT: z.string().optional(),
 
   POLL_INTERVAL_MS: z.coerce.number().int().positive().default(4000),
   POLL_TIMEOUT_MS: z.coerce.number().int().positive().default(600000),

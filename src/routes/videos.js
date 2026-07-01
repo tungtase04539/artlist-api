@@ -6,10 +6,11 @@ import { isArtlistConfigured } from '../config.js';
 const generateSchema = z.object({
   prompt: z.string().min(1),
   image: z.string().url().optional(),
-  model: z.string().optional(),
+  modelId: z.number().int().positive().optional(),
   duration: z.number().int().positive().optional(),
   aspectRatio: z.string().optional(),
   resolution: z.string().optional(),
+  generateAudio: z.boolean().optional(),
 });
 
 /**

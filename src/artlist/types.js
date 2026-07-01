@@ -6,6 +6,8 @@
  * @property {number} [duration]      Độ dài (giây)
  * @property {string} [aspectRatio]   '16:9' | '9:16' | '1:1' ...
  * @property {string} [resolution]    '720p' | '1080p' ...
+ * @property {boolean} [generateAudio] Tạo kèm audio (settings.generate_audio)
+ * @property {number} [modelId]       ID model artlist (vd 2524 = Seedance)
  */
 
 /**
