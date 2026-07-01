@@ -106,4 +106,9 @@ export default async function docsRoutes(app) {
   app.get('/guide', async (req, reply) => {
     reply.type('text/html').send(readFileSync(join(__dir, '../dashboard/guide-zh.html'), 'utf8'));
   });
+
+  // Client console (中文) — khách tự nhập API key, xem credits, tạo & xem video.
+  app.get('/app', async (req, reply) => {
+    reply.type('text/html').send(readFileSync(join(__dir, '../dashboard/client.html'), 'utf8'));
+  });
 }

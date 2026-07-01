@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Artlist 视频生成 · 控制台</title>
+<style>
+  :root { --bg:#0f1420; --card:#161d2d; --line:#24304a; --fg:#e6e9ef; --mut:#8a93a6; --acc:#8fb0ff; --code:#0b0f18; --grn:#7ee2a1; }
+  * { box-sizing:border-box; }
+  body { font-family:system-ui,"PingFang SC","Microsoft YaHei",sans-serif; margin:0; background:var(--bg); color:var(--fg); }
+  header { background:var(--card); border-bottom:1px solid var(--line); padding:12px 18px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  h1 { font-size:16px; margin:0; }
+  main { padding:16px; max-width:1000px; margin:auto; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:16px; }
+  h2 { font-size:14px; margin:0 0 12px; color:var(--acc); }
+  label { display:block; font-size:12px; color:var(--mut); margin:8px 0 3px; }
+  input, textarea, select, button { font:inherit; background:var(--code); color:var(--fg); border:1px solid #2a3654; border-radius:6px; padding:8px 10px; }
+  input, textarea, select { width:100%; }
+  textarea { min-height:64px; resize:vertical; }
+  button { background:#2b64ff; border:0; cursor:pointer; font-weight:600; }
+  button.ghost { background:#24304a; }
+  button:disabled { opacity:.5; cursor:default; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; }
+  .row > div { flex:1; min-width:120px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px; }
+  .stat { background:var(--code); border:1px solid var(--line); border-radius:8px; padding:10px; }
+  .stat b { font-size:20px; display:block; }
+  .mut { color:var(--mut); font-size:12px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); vertical-align:middle; }
+  .pill { padding:2px 8px; border-radius:20px; font-size:11px; font-weight:600; }
+  .done { background:#12331e; color:var(--grn); } .proc { background:#33290f; color:#f2c66a; } .fail { background:#3a1720; color:#f0889b; }
+  a { color:var(--acc); } code { background:var(--code); padding:1px 5px; border-radius:4px; }
+  #result video { max-width:100%; border-radius:8px; margin-top:8px; }
+  .err { color:#f0889b; font-size:13px; }
+  img.thumb { width:64px; height:36px; object-fit:cover; border-radius:4px; background:#0b0f18; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎬 Artlist 视频生成 · 控制台</h1>
+  <input id="key" type="password" placeholder="粘贴你的 API Key (alk_...)" style="margin-left:auto;max-width:320px" />
+  <button onclick="saveKey()">保存</button>
+  <a class="mut" href="/guide" target="_blank" style="align-self:center">使用文档 →</a>
+</header>
+<main>
+  <section>
+    <h2>账户</h2>
+    <div id="account" class="grid"><div class="mut">请在右上角粘贴 API Key。</div></div>
+  </section>
+
+  <section>
+    <h2>生成视频</h2>
+    <label>模型</label>
+    <select id="model"></select>
+    <label>Prompt（视频描述；多图可用 @img1 @img2 …）</label>
+    <textarea id="prompt" placeholder="a red panda skateboarding on a neon street, cinematic"></textarea>
+    <div class="row">
+      <div><label>分辨率</label><select id="resolution"><option>480p</option><option selected>720p</option><option>1080p</option><option>4k</option></select></div>
+      <div><label>时长(秒)</label><select id="duration"></select></div>
+      <div><label>画面比例</label><select id="aspect"><option selected>16:9</option><option>9:16</option><option>4:3</option><option>3:4</option><option>1:1</option><option>21:9</option></select></div>
+      <div><label>音频</label><select id="audio"><option value="true" selected>开</option><option value="false">关</option></select></div>
+    </div>
+    <label>图片 URL（可选，图生视频；每行一个，最多 9 张）</label>
+    <textarea id="images" placeholder="https://example.com/1.jpg&#10;https://example.com/2.jpg"></textarea>
+    <div class="row" style="align-items:end;margin-top:8px">
+      <div style="max-width:160px"><label>价格上限 maxCredits</label><input id="maxCredits" type="number" value="2000" /></div>
+      <div style="flex:0 0 auto"><button id="genBtn" onclick="create()">生成</button></div>
+    </div>
+    <div id="result" style="margin-top:12px"></div>
+  </section>
+
+  <section>
+    <h2>我的视频 <button class="ghost" style="float:right;padding:4px 10px" onclick="loadJobs()">刷新</button></h2>
+    <table><thead><tr><th></th><th>状态</th><th>积分</th><th>时间</th><th>视频</th></tr></thead><tbody id="jobs"></tbody></table>
+  </section>
+</main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+let KEY = localStorage.getItem('clientKey') || '';
+$('#key').value = KEY;
+// 时长下拉 4..15
+$('#duration').innerHTML = Array.from({length:12},(_,i)=>i+4).map(d=>`<option${d===5?' selected':''}>${d}</option>`).join('');
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, { ...opts, headers: { 'content-type': 'application/json', 'x-api-key': KEY, ...(opts.headers||{}) } });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+  return j;
+}
+function saveKey() { KEY = $('#key').value.trim(); localStorage.setItem('clientKey', KEY); init(); }
+const fmt = (t) => t ? new Date(Number(t)).toLocaleString() : '-';
+const pill = (s) => s==='done' ? '<span class="pill done">完成</span>' : s==='failed' ? '<span class="pill fail">失败</span>' : '<span class="pill proc">生成中</span>';
+
+async function init() {
+  if (!KEY) return;
+  try {
+    const me = await api('/v1/me');
+    $('#account').innerHTML = [
+      ['剩余积分', me.credits], ['每分钟', me.rateLimit.perMinute], ['每天', me.rateLimit.perDay], ['账户', me.name],
+    ].map(([k,v]) => `<div class="stat"><b>${v}</b><span class="mut">${k}</span></div>`).join('');
+    const { models } = await api('/v1/models');
+    $('#model').innerHTML = models.map(m => `<option value="${m.slug}">${m.name} (${(m.features||[]).join('/')})</option>`).join('');
+    const seed = models.find(m=>m.slug==='seedance-2.0'); if (seed) $('#model').value = 'seedance-2.0';
+    await loadJobs();
+  } catch (e) { $('#account').innerHTML = `<div class="err">${e.message}</div>`; }
+}
+
+async function create() {
+  if (!KEY) return alert('请先粘贴 API Key');
+  const images = $('#images').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  const body = {
+    model: $('#model').value,
+    prompt: $('#prompt').value.trim(),
+    settings: { resolution:$('#resolution').value, duration:Number($('#duration').value), aspect_ratio:$('#aspect').value, generate_audio:$('#audio').value==='true' },
+    maxCredits: Number($('#maxCredits').value) || undefined,
+  };
+  if (images.length) body.images = images;
+  if (!body.prompt) return alert('请填写 Prompt');
+  $('#genBtn').disabled = true;
+  $('#result').innerHTML = '<span class="mut">提交中…</span>';
+  try {
+    const job = await api('/v1/videos', { method:'POST', body: JSON.stringify(body) });
+    $('#result').innerHTML = `<span class="mut">已提交 (jobId ${job.jobId.slice(-8)})，扣 ${job.credits} 积分，生成中…</span>`;
+    await loadJobs();
+    poll(job.jobId);
+  } catch (e) {
+    $('#result').innerHTML = `<span class="err">失败：${e.message}</span>`;
+    $('#genBtn').disabled = false;
+  }
+}
+
+async function poll(id) {
+  try {
+    const j = await api('/v1/videos/' + id);
+    if (j.status === 'processing') { setTimeout(() => poll(id), 4000); return; }
+    $('#genBtn').disabled = false;
+    await loadJobs(); await init();
+    if (j.status === 'done') {
+      $('#result').innerHTML = `<div>✅ 完成！<a href="${j.videoUrl}" target="_blank">下载链接</a></div><video controls src="${j.videoUrl}"></video>`;
+    } else {
+      $('#result').innerHTML = `<span class="err">生成失败：${j.error||''}（积分已退还）</span>`;
+    }
+  } catch (e) { $('#result').innerHTML = `<span class="err">${e.message}</span>`; $('#genBtn').disabled = false; }
+}
+
+async function loadJobs() {
+  if (!KEY) return;
+  try {
+    const jobs = await api('/v1/videos');
+    $('#jobs').innerHTML = jobs.map(j => `<tr>
+      <td>${j.thumbnailUrl ? `<img class="thumb" src="${j.thumbnailUrl}">` : ''}</td>
+      <td>${pill(j.status)}</td>
+      <td>${j.credits}</td>
+      <td class="mut">${fmt(j.createdAt)}</td>
+      <td>${j.videoUrl ? `<a href="${j.videoUrl}" target="_blank">打开</a>` : '<span class="mut">—</span>'}</td>
+    </tr>`).join('') || '<tr><td colspan="5" class="mut">暂无任务</td></tr>';
+  } catch (e) { $('#jobs').innerHTML = `<tr><td colspan="5" class="err">${e.message}</td></tr>`; }
+}
+
+init();
+</script>
+</body>
+</html>
