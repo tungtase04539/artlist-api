@@ -32,6 +32,9 @@ async function call({ url, method, body }) {
     body: body ? JSON.stringify(body) : undefined,
   });
 
+  // Tự làm mới cookie (cf_clearance/__cf_bm/session-token) từ Set-Cookie của artlist.
+  try { session.mergeSetCookie(res.headers.getSetCookie?.()); } catch { /* noop */ }
+
   const text = await res.text();
 
   if (res.status === 401 || res.status === 403) {
