@@ -2,12 +2,16 @@ import { config } from '../config.js';
 
 /**
  * Khai báo TẬP TRUNG các endpoint & shape request của artlist (API kiểu tRPC).
- * Gom hết ở đây để khi artlist đổi API, chỉ sửa 1 file này.
  *
- * tRPC convention (đã xác nhận từ request thật):
- *  - Query (GET):     /api/trpc/<router>.<proc>?input=<urlencoded {"json":{...}}>
- *  - Mutation (POST): /api/trpc/<router>.<proc>   body = {"json":{...}}
- *  - Response:        { result: { data: { json: <value> } } }
+ * Luồng tạo video Seedance (suy ra từ request thật):
+ *   1) QUOTE  — xin cost quote → nhận { price, timestamp, costQuoteDigitalSignature (JWT ký server) }
+ *   2) CREATE — userGenerationRouter.createUserGeneration (POST), đính kèm chữ ký ở (1)
+ *   3) STATUS — userGenerationRouter.getUserGeneration (GET by id), poll tới khi có videoUrl
+ *
+ * tRPC convention:
+ *   - Query (GET):     /api/trpc/<router>.<proc>?input=<urlencoded {"json":{...}}>
+ *   - Mutation (POST): /api/trpc/<router>.<proc>   body = {"json":{...}}
+ *   - Response:        { result: { data: { json: <value> } } }
  */
 
 const base = () => {
@@ -24,36 +28,68 @@ function trpcQueryUrl(procedure, input) {
 }
 
 /**
- * SUBMIT — tạo generation (mutation POST `userGenerationRouter.create`).
- * ⚠️ TODO: shape `body.json` dưới đây là SUY LUẬN từ response status thật.
- *          Xác nhận lại tên procedure & field khi bắt được cURL `create`.
+ * (1) QUOTE — xin chữ ký cost quote cho đúng bộ inputs.
+ * ⚠️ TODO: CHƯA BẮT ĐƯỢC request này. Cần xác nhận: tên procedure, GET hay POST, shape input.
+ *          Placeholder dưới đây là SUY LUẬN — sẽ sửa khi có cURL quote thật.
  * @param {import('./types.js').GenerateParams} params
+ */
+export function quoteRequest(params) {
+  const input = {
+    inputs: buildInputs(params),
+    modelGroupId: params.modelId ?? 2524,
+    feature: params.image ? 'image-to-video' : 'text-to-video',
+    settings: buildSettings(params),
+  };
+  return {
+    // TODO: tên thật có thể là getCostQuote / calculateCost / getPrice ...
+    url: trpcQueryUrl('userGenerationRouter.getCostQuote', input),
+    method: 'GET',
+  };
+}
+
+/**
+ * Chuẩn hoá response QUOTE → { price, timestamp, costQuoteDigitalSignature }.
+ * ⚠️ TODO: map đúng field khi có response thật.
+ * @returns {import('./types.js').QuoteResult}
+ */
+export function normalizeQuote(raw) {
+  const q = raw?.result?.data?.json ?? {};
+  return {
+    price: q.price ?? q.cost,
+    timestamp: q.timestamp,
+    costQuoteDigitalSignature: q.costQuoteDigitalSignature ?? q.signature,
+  };
+}
+
+/**
+ * (2) CREATE — tạo generation (mutation POST `userGenerationRouter.createUserGeneration`).
+ * ✅ Shape body xác nhận từ request thật. Cần price/timestamp/costQuoteDigitalSignature từ QUOTE.
+ * @param {import('./types.js').GenerateParams & import('./types.js').QuoteResult} params
  */
 export function submitRequest(params) {
   return {
-    url: `${base()}/api/trpc/userGenerationRouter.create`, // TODO: xác nhận tên procedure
+    url: `${base()}/api/trpc/userGenerationRouter.createUserGeneration`,
     method: 'POST',
     body: {
       json: {
-        prompt: params.prompt,
-        modelId: params.modelId ?? 2524, // 2524 = Seedance (từ response thật)
+        chatSessionId: params.chatSessionId, // ⚠️ bắt buộc — xem ghi chú types.js
+        inputs: buildInputs(params),
+        modelGroupId: params.modelId ?? 2524, // 2524 = Seedance
         feature: params.image ? 'image-to-video' : 'text-to-video',
-        // artlist dùng snake_case trong settings (xác nhận từ response):
-        settings: {
-          prompt: params.prompt,
-          duration: params.duration ?? 4,
-          resolution: params.resolution ?? '720p',
-          aspect_ratio: params.aspectRatio ?? '16:9',
-          generate_audio: params.generateAudio ?? true,
-        },
-        // TODO: nếu image-to-video, bổ sung field ảnh (image id/url) từ cURL create thật.
+        price: params.price, // từ QUOTE
+        settings: buildSettings(params),
+        artifacts: params.artifacts ?? [],
+        costQuoteDigitalSignature: params.costQuoteDigitalSignature, // từ QUOTE (BẮT BUỘC)
+        timestamp: params.timestamp, // từ QUOTE (phải khớp chữ ký)
+        generationMethod: params.generationMethod ?? 'credits',
+        isCopyCmsFileEnabled: false,
       },
     },
   };
 }
 
 /**
- * STATUS — lấy generation theo id (query GET `userGenerationRouter.getUserGeneration`).
+ * (3) STATUS — lấy generation theo id (query GET `userGenerationRouter.getUserGeneration`).
  * ✅ Đã xác nhận từ request thật.
  * @param {string} providerJobId
  */
@@ -64,18 +100,15 @@ export function statusRequest(providerJobId) {
   };
 }
 
-/**
- * RESULT — artlist gộp kết quả vào STATUS (khi done sẽ có URL video), nên dùng chung.
- * @param {string} providerJobId
- */
+/** RESULT gộp vào STATUS (khi done sẽ có URL video). */
 export function resultRequest(providerJobId) {
   return statusRequest(providerJobId);
 }
 
 /**
- * Chuẩn hoá response tRPC → shape nội bộ.
- * Response thật: { result: { data: { json: [ { id, status, settings, ... } ] } } }
- * @param {any} raw
+ * Chuẩn hoá response tRPC của STATUS/CREATE → shape nội bộ.
+ * STATUS thật: { result: { data: { json: [ { id, status, settings, ... } ] } } }
+ * CREATE:      { result: { data: { json:   { id, status, ... } } } }  (giả định)
  */
 export function normalizeStatus(raw) {
   const node = raw?.result?.data?.json;
@@ -84,9 +117,8 @@ export function normalizeStatus(raw) {
   return {
     providerJobId: gen.id,
     status: mapStatus(gen.status),
-    progress: gen.progress, // có thể không tồn tại; UI có thể chỉ có status
-    // ⚠️ TODO: xác nhận tên field URL video khi status = done.
-    // Ứng viên: url / videoUrl / outputUrl / result?.url / media?.[0]?.url
+    progress: gen.progress,
+    // ⚠️ TODO: xác nhận tên field URL video khi status = done (chưa thấy response done).
     videoUrl:
       gen.videoUrl ?? gen.url ?? gen.outputUrl ?? gen.result?.url ?? gen.media?.[0]?.url,
     error: gen.error ?? gen.failureReason ?? gen.errorMessage,
@@ -94,10 +126,25 @@ export function normalizeStatus(raw) {
   };
 }
 
-/**
- * Map trạng thái artlist → nội bộ ('processing' | 'done' | 'failed').
- * ⚠️ TODO: bổ sung giá trị "done" thật (hiện mới thấy 'processing').
- */
+/** inputs gửi lên (text-to-video chỉ có prompt; image-to-video thêm ảnh). */
+function buildInputs(params) {
+  const inputs = { prompt: params.prompt };
+  if (params.image) inputs.image = params.image; // TODO: xác nhận field ảnh thật
+  return inputs;
+}
+
+/** settings dùng snake_case (xác nhận từ request thật). */
+function buildSettings(params) {
+  return {
+    prompt: params.prompt,
+    resolution: params.resolution ?? '720p',
+    duration: params.duration ?? 4,
+    generate_audio: params.generateAudio ?? true,
+    aspect_ratio: params.aspectRatio ?? '16:9',
+  };
+}
+
+/** Map trạng thái artlist → nội bộ. ⚠️ TODO: bổ sung giá trị "done" thật (mới thấy 'processing'). */
 function mapStatus(s) {
   switch (s) {
     case 'completed':
@@ -116,6 +163,6 @@ function mapStatus(s) {
     case 'in_progress':
       return 'processing';
     default:
-      return s ?? 'processing'; // giữ nguyên giá trị lạ để dễ debug
+      return s ?? 'processing';
   }
 }

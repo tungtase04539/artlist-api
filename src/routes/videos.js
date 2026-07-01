@@ -11,6 +11,7 @@ const generateSchema = z.object({
   aspectRatio: z.string().optional(),
   resolution: z.string().optional(),
   generateAudio: z.boolean().optional(),
+  chatSessionId: z.string().optional(), // ⚠️ bắt buộc cho create; nguồn gốc đang xác nhận
 });
 
 /**

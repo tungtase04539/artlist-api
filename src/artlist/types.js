@@ -7,7 +7,19 @@
  * @property {string} [aspectRatio]   '16:9' | '9:16' | '1:1' ...
  * @property {string} [resolution]    '720p' | '1080p' ...
  * @property {boolean} [generateAudio] Tạo kèm audio (settings.generate_audio)
- * @property {number} [modelId]       ID model artlist (vd 2524 = Seedance)
+ * @property {number} [modelId]       ID model artlist / modelGroupId (vd 2524 = Seedance)
+ * @property {string} [chatSessionId] ID phiên/project. ⚠️ BẮT BUỘC cho create.
+ *                                    Nguồn gốc chưa rõ (client tự sinh UUIDv7 hay có request tạo?) — cần xác nhận.
+ * @property {any[]}  [artifacts]     Tệp đính kèm (ảnh cho image-to-video), mặc định []
+ * @property {string} [generationMethod] 'credits' | ... (mặc định 'credits')
+ */
+
+/**
+ * Kết quả cost quote — do server artlist ký, đính kèm khi create.
+ * @typedef {Object} QuoteResult
+ * @property {number} price                     Giá (credits), phải khớp chữ ký
+ * @property {number} timestamp                 Mốc thời gian, phải khớp chữ ký
+ * @property {string} costQuoteDigitalSignature JWT (HS256) ký bởi server — KHÔNG tự chế được
  */
 
 /**

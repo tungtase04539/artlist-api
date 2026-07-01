@@ -1,7 +1,14 @@
 import { fetchWithRetry, HttpError } from '../lib/http.js';
 import { logger } from '../lib/logger.js';
 import { session } from '../session/session.js';
-import { submitRequest, statusRequest, resultRequest, normalizeStatus } from './endpoints.js';
+import {
+  quoteRequest,
+  submitRequest,
+  statusRequest,
+  resultRequest,
+  normalizeStatus,
+  normalizeQuote,
+} from './endpoints.js';
 
 /**
  * Lớp replay lõi: gọi sang artlist bằng session của bạn.
@@ -36,16 +43,33 @@ async function call({ url, method, body }) {
 }
 
 /**
- * Gửi yêu cầu tạo video → trả providerJobId.
+ * (1) Lấy cost quote — BẮT BUỘC trước khi create.
+ * Trả về chữ ký JWT do server ký; KHÔNG thể tự chế, phải xin cho đúng bộ inputs.
+ * @param {import('./types.js').GenerateParams} params
+ * @returns {Promise<import('./types.js').QuoteResult>}
+ */
+export async function getCostQuote(params) {
+  const raw = await call(quoteRequest(params));
+  const q = normalizeQuote(raw);
+  if (!q.costQuoteDigitalSignature) {
+    logger.error({ raw }, 'Quote thiếu costQuoteDigitalSignature — cập nhật endpoints.quoteRequest/normalizeQuote theo request thật');
+    throw new Error('Chưa lấy được cost quote (cần bắt request QUOTE và điền endpoints.js).');
+  }
+  return q;
+}
+
+/**
+ * (2) Tạo video: quote → create. Trả providerJobId.
  * @param {import('./types.js').GenerateParams} params
  * @returns {Promise<{ providerJobId: string, raw: any }>}
  */
 export async function submit(params) {
-  const raw = await call(submitRequest(params));
+  const quote = await getCostQuote(params);
+  const raw = await call(submitRequest({ ...params, ...quote }));
   const norm = normalizeStatus(raw);
   if (!norm.providerJobId) {
-    logger.error({ raw }, 'Không tìm thấy providerJobId trong response submit — kiểm tra normalizeStatus()');
-    throw new Error('Response submit không có jobId (cần sửa endpoints.js theo response thật).');
+    logger.error({ raw }, 'Response create không có id — kiểm tra normalizeStatus()');
+    throw new Error('Response createUserGeneration không có id (kiểm tra normalizeStatus).');
   }
   return { providerJobId: norm.providerJobId, raw };
 }
