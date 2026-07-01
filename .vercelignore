@@ -1,0 +1,6 @@
+.env
+.env.*
+test
+docs
+scripts
+*.md

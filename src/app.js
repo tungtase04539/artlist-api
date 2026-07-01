@@ -9,7 +9,10 @@ import systemRoutes from './routes/system.js';
 
 /** Dựng Fastify app (dùng chung cho standalone `src/index.js` và serverless `api/index.js`). */
 export async function buildApp() {
-  await ready(); // khởi tạo DB + migrate
+  // Khởi tạo DB + migrate sớm, nhưng KHÔNG để lỗi DB làm sập cả app:
+  // /health và các route không cần DB vẫn chạy; route cần DB sẽ báo lỗi riêng.
+  // (query() vẫn tự init lazy ở lần gọi đầu nếu ở đây fail.)
+  try { await ready(); } catch (e) { logger.error({ err: String(e.message || e) }, 'DB init lỗi khi boot — sẽ thử lại lúc query'); }
 
   const app = Fastify({ loggerInstance: logger, trustProxy: true });
 

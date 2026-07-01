@@ -20,3 +20,5 @@ dist/
 .idea/
 .vscode/
 *.log
+.vercel
+.env*

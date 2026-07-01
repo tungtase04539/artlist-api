@@ -34,7 +34,8 @@ async function init() {
 
 /** Đảm bảo DB đã khởi tạo (idempotent). */
 export async function ready() {
-  if (!_ready) _ready = init();
+  // Nếu init lỗi (vd DB tạm không tới được), reset để lần gọi sau thử lại.
+  if (!_ready) _ready = init().catch((e) => { _ready = null; throw e; });
   return _ready;
 }
 
