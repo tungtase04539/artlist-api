@@ -39,9 +39,13 @@ export function normalizePresign(raw) {
   const n = raw?.result?.data?.json; const d = n?.data ?? n ?? {};
   return { presignedUrl: d.presignedUrl, fileKey: d.fileKey, fileUrl: d.fileUrl };
 }
-/** GET-url đọc được từ fileKey (bắt buộc để model đọc ảnh). */
-export function presignFromKeyRequest(fileKey) {
-  return { url: `${base()}/api/trpc/uploadRouter.getPresignedUrlFromKey`, method: 'POST', body: { json: { fileKey } } };
+/**
+ * GET-url ĐỌC ĐƯỢC (đã ký CloudFront) từ fileKey.
+ * Bắt buộc cho cả (a) media đầu vào để model đọc, và (b) video KẾT QUẢ để trả cho client —
+ * bucket artifacts được CloudFront bảo vệ, url thô chỉ chạy trong trình duyệt đã đăng nhập.
+ */
+export function presignFromKeyRequest(fileKey, expiresIn = 259200) {
+  return { url: `${base()}/api/trpc/uploadRouter.getPresignedUrlFromKey`, method: 'POST', body: { json: { fileKey, expiresIn } } };
 }
 export function normalizeReadUrl(raw) { const n = raw?.result?.data?.json; return (n?.data ?? n)?.presignedUrl; }
 
@@ -84,13 +88,17 @@ export function normalizeStatus(raw) {
   const gen = Array.isArray(node) ? node[0] : node;
   if (!gen) return {};
   const out = Array.isArray(gen.outputs) ? gen.outputs[0] : gen.output;
+  const asset = gen.assetFileInfo ?? out?.assetFileInfo;
   return {
     providerJobId: gen.id,
     status: mapStatus(gen.status),
     progress: gen.progress,
-    videoUrl: gen.videoUrl ?? gen.fileUrl ?? gen.url ?? out?.fileUrl ?? out?.url ?? out?.videoUrl,
-    thumbnailUrl: gen.thumbnailUrl ?? out?.thumbnailUrl,
-    fileKey: gen.fileKey ?? out?.fileKey,
+    // ⚠️ url thô (fileUrl/imgixUrl) KHÔNG ký CloudFront → chỉ chạy trong trình duyệt đã đăng nhập.
+    // Ưu tiên trả về fileKey để service tự ký (getPresignedUrlFromKey) trước khi đưa cho client.
+    videoUrl: gen.videoUrl ?? gen.fileUrl ?? gen.url ?? out?.fileUrl ?? out?.url ?? out?.videoUrl ?? asset?.fileUrl,
+    thumbnailUrl: gen.thumbnailUrl ?? out?.thumbnailUrl ?? asset?.thumbnailUrl,
+    fileKey: gen.fileKey ?? out?.fileKey ?? asset?.fileKey,
+    thumbnailKey: gen.thumbnailKey ?? gen.thumbnailFileKey ?? out?.thumbnailKey ?? out?.thumbnailFileKey ?? asset?.thumbnailFileKey,
     error: gen.error ?? gen.failureReason ?? gen.errorMessage,
     raw: gen,
   };

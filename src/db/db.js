@@ -90,10 +90,15 @@ async function migrate() {
     refunded integer NOT NULL DEFAULT 0,
     video_url text,
     thumbnail_url text,
+    output_file_key text,
+    thumbnail_file_key text,
     error text,
     created_at bigint NOT NULL,
     updated_at bigint NOT NULL
   )`);
+  // Lưu fileKey kết quả để ký lại url CloudFront khi hết hạn (bảng cũ → thêm cột).
+  await _q(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS output_file_key text`);
+  await _q(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS thumbnail_file_key text`);
   await _q(`CREATE INDEX IF NOT EXISTS idx_jobs_client ON jobs(client_id, created_at)`);
   await _q(`CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status)`);
 

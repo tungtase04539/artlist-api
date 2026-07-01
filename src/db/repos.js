@@ -95,7 +95,7 @@ export const Credits = {
 };
 
 // ─────────────────────────── Jobs ───────────────────────────
-const JOB_COLS = ['provider_job_id', 'status', 'price', 'refunded', 'video_url', 'thumbnail_url', 'error'];
+const JOB_COLS = ['provider_job_id', 'status', 'price', 'refunded', 'video_url', 'thumbnail_url', 'output_file_key', 'thumbnail_file_key', 'error'];
 export const Jobs = {
   async create({ id, clientId, prompt, params, price }) {
     const t = now();

@@ -68,6 +68,30 @@ test('normalizeStatus: response done THẬT (video đã tạo) → done + videoU
   assert.ok(s.thumbnailUrl.includes('.jpg'));
 });
 
+test('normalizeStatus: done → LẤY ĐƯỢC output fileKey/thumbnailKey để ký lại url CloudFront', () => {
+  // Video kết quả nằm ở bucket artifacts (CloudFront) — url thô báo MissingKey, phải ký từ fileKey.
+  const realDone = { result: { data: { json: [ {
+    id: 'g1', status: 'completed',
+    assetFileInfo: {
+      fileUrl: 'https://cms-toolkit-artifacts.artlist.io/out.mp4?Expires=2098828892',
+      thumbnailUrl: 'https://cms-toolkit-public-artifacts.artlist.io/t.jpg',
+      fileKey: 'content/out.mp4',
+    },
+    thumbnailFileKey: 'content/t.jpg',
+  } ] } } };
+  const s = ep.normalizeStatus(realDone);
+  assert.equal(s.status, 'done');
+  assert.equal(s.fileKey, 'content/out.mp4');       // dùng để getPresignedUrlFromKey
+  assert.equal(s.thumbnailKey, 'content/t.jpg');
+});
+
+test('presignFromKeyRequest: gửi fileKey + expiresIn (ký url đọc được)', () => {
+  const r = ep.presignFromKeyRequest('content/out.mp4');
+  assert.equal(r.method, 'POST');
+  assert.ok(r.url.endsWith('/api/trpc/uploadRouter.getPresignedUrlFromKey'));
+  assert.deepEqual(r.body.json, { fileKey: 'content/out.mp4', expiresIn: 259200 });
+});
+
 test('normalizeQuote: map cost/digitalSignature/timestamp (envelope {success,data})', () => {
   const raw = { result: { data: { json: { success: true, data: { cost: 1200, digitalSignature: 'JWT.aaa.bbb', timestamp: 1782887821107 } } } } };
   const q = ep.normalizeQuote(raw);

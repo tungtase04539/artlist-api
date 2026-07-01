@@ -56,6 +56,7 @@ export async function resolveMedia(params) {
   const urlStrings = {};
   const urlObjects = {};
   const artifacts = [];
+  const injectTags = [];
   try {
     for (const K of MEDIA_KINDS) {
       const urls = asArr(params[K.field]);
@@ -69,9 +70,10 @@ export async function resolveMedia(params) {
         artifacts.push(toArtifact(m, K.key));
         const tagId = `${K.tag}${i + 1}`;
         tagReferences.push({ tagId, type: K.tag, orderForType: i + 1 });
-        if (!prompt.includes(tagId)) prompt = prompt ? `${tagId} ${prompt}` : tagId;
+        if (!prompt.includes(tagId)) injectTags.push(tagId);
       });
     }
+    if (injectTags.length) prompt = [injectTags.join(' '), prompt].filter(Boolean).join(' ');
   } catch (e) {
     e.mediaError = true;
     throw e;
@@ -150,18 +152,57 @@ export async function createVideo(client, params, ip) {
   }
 }
 
+/**
+ * Ký url CloudFront cho video/thumbnail kết quả (bucket artifacts được bảo vệ).
+ * Url thô artlist trả về chỉ chạy trong trình duyệt đã đăng nhập → phải ký bằng fileKey
+ * (getPresignedUrlFromKey) mới xem/tải được từ bên ngoài. Fallback về url thô nếu ký lỗi.
+ */
+async function signResult(s) {
+  const patch = { video_url: s.videoUrl, thumbnail_url: s.thumbnailUrl, output_file_key: s.fileKey, thumbnail_file_key: s.thumbnailKey };
+  if (s.fileKey) {
+    try { patch.video_url = await artlist.getReadableUrl(s.fileKey); }
+    catch (e) { logger.warn({ err: String(e) }, 'Ký url video kết quả lỗi — dùng url thô'); }
+  }
+  if (s.thumbnailKey) {
+    try { patch.thumbnail_url = await artlist.getReadableUrl(s.thumbnailKey); } catch { /* giữ url thô */ }
+  }
+  return patch;
+}
+
 /** Đẩy 1 job đang chạy: hỏi artlist status 1 lần → done/failed (hoàn credits nếu lỗi). Idempotent. */
 export async function advanceJob(job) {
   if (!job || !['pending', 'processing'].includes(job.status) || !job.provider_job_id) return job;
   if (Date.now() - Number(job.created_at) > config.POLL_TIMEOUT_MS) return refund(job, 'timeout');
   try {
     const s = await artlist.status(job.provider_job_id);
-    if (s.status === 'done' || s.videoUrl) return await Jobs.update(job.id, { status: 'done', video_url: s.videoUrl, thumbnail_url: s.thumbnailUrl });
+    if (s.status === 'done' || s.videoUrl) return await Jobs.update(job.id, { status: 'done', ...(await signResult(s)) });
     if (s.status === 'failed') return refund(job, s.error || 'artlist failed');
     return await Jobs.update(job.id, { status: 'processing' });
   } catch (e) {
     if (isAuthErr(e)) await monitor.noteSessionExpired(`HTTP ${e.status}`);
     logger.warn({ jobId: job.id, err: String(e) }, 'advanceJob lỗi');
+    return job;
+  }
+}
+
+// Url ký CloudFront sống 3 ngày → ký lại nếu job done đã "già" hơn ngưỡng này.
+const URL_REFRESH_MS = 2 * 24 * 3600 * 1000;
+
+/**
+ * Đảm bảo video_url còn hạn khi client đọc job done. Nếu url gần hết hạn và còn output_file_key,
+ * ký lại từ fileKey (1 lần gọi artlist, có throttle theo updated_at). Trả job (đã cập nhật nếu ký lại).
+ */
+export async function ensureFreshUrl(job) {
+  if (!job || job.status !== 'done' || !job.output_file_key) return job;
+  if (Date.now() - Number(job.updated_at) < URL_REFRESH_MS) return job;
+  try {
+    const patch = { video_url: await artlist.getReadableUrl(job.output_file_key) };
+    if (job.thumbnail_file_key) {
+      try { patch.thumbnail_url = await artlist.getReadableUrl(job.thumbnail_file_key); } catch { /* giữ cũ */ }
+    }
+    return await Jobs.update(job.id, patch);
+  } catch (e) {
+    logger.warn({ jobId: job.id, err: String(e) }, 'Ký lại url video lỗi');
     return job;
   }
 }
