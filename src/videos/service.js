@@ -28,24 +28,48 @@ async function ensureClientSession(client, provided) {
 
 const asArr = (x) => (Array.isArray(x) ? x : x ? [x] : []);
 
-/** Upload các media đầu vào (đa ảnh/video/audio/end_frame) → gộp vào settings với đúng field name. */
+/** 1 file đã upload → object artifact (đính kèm file thật vào generation). */
+function toArtifact(m, inputSettingKey) {
+  return {
+    fileKey: m.fileKey,
+    metadata: { fileUrl: m.fileUrl, mimeType: m.mimeType, inputSettingKey, fileType: 'deviceUpload', fileName: m.fileName, byteSize: m.byteSize },
+  };
+}
+
+/**
+ * Upload media đầu vào (đa ảnh/video/audio/end_frame) → { settings, artifacts }.
+ * settings.*_urls dùng cho quote/model; artifacts đính kèm file THẬT (bắt buộc để gen chạy).
+ */
 async function resolveMedia(params) {
   const s = { ...(params.settings || {}) };
+  const artifacts = [];
   try {
     const images = asArr(params.images);
     if (images.length > config.MAX_IMAGES) throw new Error(`Tối đa ${config.MAX_IMAGES} ảnh (image_urls)`);
-    if (images.length) s.image_urls = await Promise.all(images.map((u) => upload.uploadMedia(u, 'image')));
-    if (params.image) s.image_url = await upload.uploadMedia(params.image, 'image');
-    if (params.endFrame) s.end_frame = await upload.uploadMedia(params.endFrame, 'image');
+    if (images.length) {
+      const ups = await Promise.all(images.map((u) => upload.uploadMedia(u, 'image')));
+      s.image_urls = ups.map((m) => m.fileUrl);
+      for (const m of ups) artifacts.push(toArtifact(m, 'image_urls'));
+    }
+    if (params.image) { const m = await upload.uploadMedia(params.image, 'image'); s.image_url = m.fileUrl; artifacts.push(toArtifact(m, 'image_url')); }
+    if (params.endFrame) { const m = await upload.uploadMedia(params.endFrame, 'image'); s.end_frame = m.fileUrl; artifacts.push(toArtifact(m, 'end_frame')); }
     const videos = asArr(params.videos);
-    if (videos.length) s.video_urls = await Promise.all(videos.map((u) => upload.uploadMedia(u, 'video')));
+    if (videos.length) {
+      const ups = await Promise.all(videos.map((u) => upload.uploadMedia(u, 'video')));
+      s.video_urls = ups.map((m) => m.fileUrl);
+      for (const m of ups) artifacts.push(toArtifact(m, 'video_urls'));
+    }
     const audios = asArr(params.audios);
-    if (audios.length) s.audio_urls = await Promise.all(audios.map((u) => upload.uploadMedia(u, 'audio')));
+    if (audios.length) {
+      const ups = await Promise.all(audios.map((u) => upload.uploadMedia(u, 'audio')));
+      s.audio_urls = ups.map((m) => m.fileUrl);
+      for (const m of ups) artifacts.push(toArtifact(m, 'audio_urls'));
+    }
   } catch (e) {
     e.mediaError = true;
     throw e;
   }
-  return s;
+  return { settings: s, artifacts };
 }
 
 /**
@@ -66,7 +90,8 @@ export async function createVideo(client, params, ip) {
   let chatSessionId, genParams;
   try {
     chatSessionId = await ensureClientSession(client, params.chatSessionId);
-    genParams = { ...params, settings: await resolveMedia(params) };
+    const media = await resolveMedia(params);
+    genParams = { ...params, settings: media.settings, artifacts: media.artifacts };
   } catch (e) {
     if (isAuthErr(e)) { await monitor.noteSessionExpired(`HTTP ${e.status}`); throw err('SESSION_EXPIRED', 'Dịch vụ tạm gián đoạn (session nguồn hết hạn).'); }
     if (e.mediaError) throw err('MEDIA_ERROR', e.message);

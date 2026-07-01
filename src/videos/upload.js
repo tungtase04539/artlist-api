@@ -25,11 +25,12 @@ export async function uploadMedia(url, kind) {
   const buf = Buffer.from(await resp.arrayBuffer());
   if (buf.length > capMb(kind) * 1024 * 1024) throw new Error(`${kind} quá lớn (> ${capMb(kind)}MB)`);
 
-  const { presignedUrl, fileUrl } = await artlist.getPresignedUpload(`input.${ext}`, ct);
+  const fileName = `input.${ext}`;
+  const { presignedUrl, fileKey, fileUrl } = await artlist.getPresignedUpload(fileName, ct);
   const put = await fetchWithRetry(presignedUrl, { method: 'PUT', headers: { 'content-type': ct }, body: buf }, { retries: 2, timeoutMs: 60000 });
   if (!put.ok) throw new Error(`Upload ${kind} thất bại: HTTP ${put.status}`);
-  return fileUrl;
+  return { fileKey, fileUrl, mimeType: ct, byteSize: buf.length, fileName };
 }
 
-/** Tương thích cũ: upload 1 ảnh. */
-export const uploadImageFromUrl = (url) => uploadMedia(url, 'image');
+/** Tương thích cũ: upload 1 ảnh, trả fileUrl. */
+export const uploadImageFromUrl = async (url) => (await uploadMedia(url, 'image')).fileUrl;
