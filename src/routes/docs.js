@@ -31,38 +31,49 @@ const openapi = {
     '/v1/videos': {
       get: { summary: 'Danh sách job của bạn', responses: { 200: { description: 'OK' } } },
       post: {
-        summary: 'Tạo video (async). Trả jobId, poll GET /v1/videos/{id}.',
+        summary: 'Tạo video (async). Trả jobId + status=processing, rồi poll GET /v1/videos/{id} tới done.',
+        description:
+          'Cần `prompt` (trực tiếp hoặc trong `settings.prompt`). Media đầu vào là URL công khai (http/https, không phải IP nội bộ) — server tự tải & upload. '
+          + '`chatSessionId` KHÔNG bắt buộc: bỏ trống thì hệ thống tự tạo/tái dùng session. Giá tính bằng credits theo model + settings.',
         requestBody: {
           required: true,
           content: {
             'application/json': {
               schema: {
                 type: 'object',
-                required: ['chatSessionId'],
                 properties: {
-                  modelGroupId: { type: 'integer', default: 358, description: 'ID model group (GET /v1/models). 358 = Seedance 2.0.' },
-                  prompt: { type: 'string', description: 'Mô tả video (hoặc đặt trong settings.prompt).' },
-                  chatSessionId: { type: 'string', description: 'Session artlist có sẵn (admin cấp cho bạn).' },
-                  settings: { type: 'object', description: 'Thông số khớp GET /v1/models/{id} (vd resolution, duration, aspect_ratio, generate_audio).' },
-                  image: { type: 'string', format: 'uri', description: 'URL ảnh cho image-to-video (nếu model hỗ trợ).' },
+                  modelGroupId: { type: 'integer', default: 358, description: 'ID model (GET /v1/models). 358=Seedance 2.0, 416=Seedance 2.0 Mini.' },
+                  prompt: { type: 'string', description: 'Mô tả video. Có thể chèn tag ảnh @img1..@imgN. (Hoặc đặt trong settings.prompt.)' },
+                  settings: {
+                    type: 'object', description: 'Thông số khớp GET /v1/models/{id}.',
+                    properties: {
+                      resolution: { type: 'string', example: '720p' }, duration: { type: 'integer', example: 4 },
+                      aspect_ratio: { type: 'string', example: '16:9' }, generate_audio: { type: 'boolean', example: true },
+                    },
+                  },
+                  image: { type: 'string', format: 'uri', description: '1 ảnh (image-to-video).' },
+                  images: { type: 'array', items: { type: 'string', format: 'uri' }, maxItems: 9, description: 'Tối đa 9 ảnh (multi-to-video).' },
+                  videos: { type: 'array', items: { type: 'string', format: 'uri' }, description: 'Video đầu vào.' },
+                  audios: { type: 'array', items: { type: 'string', format: 'uri' }, description: 'Audio đầu vào.' },
+                  endFrame: { type: 'string', format: 'uri', description: 'Khung hình cuối.' },
+                  duration: { type: 'integer', description: 'Rút gọn của settings.duration.' },
+                  resolution: { type: 'string', description: 'Rút gọn của settings.resolution.' },
+                  aspectRatio: { type: 'string', description: 'Rút gọn của settings.aspect_ratio.' },
+                  generateAudio: { type: 'boolean', description: 'Rút gọn của settings.generate_audio.' },
+                  chatSessionId: { type: 'string', description: 'Tuỳ chọn — bỏ trống để tự tạo.' },
                   maxCredits: { type: 'integer', description: 'Trần giá — từ chối nếu quote vượt.' },
-                  expectedCredits: { type: 'integer', description: 'Giá bạn dự tính — lệch giá thật sẽ bị từ chối (chống nhầm/cheat).' },
+                  expectedCredits: { type: 'integer', description: 'Giá dự tính — lệch giá thật sẽ bị từ chối (chống nhầm/cheat).' },
                 },
               },
               examples: {
-                seedance: {
-                  value: {
-                    modelGroupId: 358,
-                    prompt: 'a red panda skateboarding, cinematic',
-                    chatSessionId: '<session-id>',
-                    settings: { resolution: '720p', duration: 4, aspect_ratio: '16:9', generate_audio: true },
-                  },
-                },
+                'text-to-video': { value: { modelGroupId: 358, prompt: 'a red panda skateboarding, cinematic', settings: { resolution: '720p', duration: 4, aspect_ratio: '16:9', generate_audio: true }, maxCredits: 2000 } },
+                'image-to-video': { value: { modelGroupId: 358, prompt: 'gentle zoom, cinematic', image: 'https://example.com/photo.jpg', maxCredits: 2000 } },
+                'multi-to-video': { value: { modelGroupId: 358, prompt: 'smooth morphing sequence', images: ['https://example.com/1.jpg', 'https://example.com/2.jpg'], maxCredits: 2000 } },
               },
             },
           },
         },
-        responses: { 202: { description: 'Đã nhận, đang xử lý' }, 400: { description: 'Sai tham số' }, 402: { description: 'Không đủ credits' }, 429: { description: 'Vượt rate limit' } },
+        responses: { 202: { description: 'Đã nhận (status=processing)' }, 400: { description: 'Sai tham số / MEDIA_ERROR' }, 401: { description: 'Thiếu/sai X-API-Key' }, 402: { description: 'Không đủ credits' }, 429: { description: 'Vượt rate limit' }, 503: { description: 'Nguồn tạm gián đoạn' } },
       },
     },
     '/v1/videos/{id}': {
