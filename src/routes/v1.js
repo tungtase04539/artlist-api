@@ -55,7 +55,7 @@ export default async function v1Routes(app) {
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'Tham số không hợp lệ', issues: parsed.error.issues });
     try {
-      const job = await service.createVideo(req.client, parsed.data, req.ip);
+      const job = await service.createVideo(req.client, parsed.data, req.realIp ?? req.ip);
       return reply.code(202).send(service.publicJob(job));
     } catch (e) {
       req.log.warn({ code: e.code, err: String(e.message) }, 'createVideo lỗi');

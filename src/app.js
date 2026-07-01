@@ -14,7 +14,14 @@ export async function buildApp() {
   // (query() vẫn tự init lazy ở lần gọi đầu nếu ở đây fail.)
   try { await ready(); } catch (e) { logger.error({ err: String(e.message || e) }, 'DB init lỗi khi boot — sẽ thử lại lúc query'); }
 
-  const app = Fastify({ loggerInstance: logger, trustProxy: true });
+  const app = Fastify({ loggerInstance: logger, trustProxy: true, bodyLimit: 256 * 1024 });
+
+  // Header bảo mật cơ bản (chống sniffing/clickjacking/rò referrer) — không cần thư viện ngoài.
+  app.addHook('onSend', async (req, reply) => {
+    reply.header('x-content-type-options', 'nosniff');
+    reply.header('x-frame-options', 'DENY');
+    reply.header('referrer-policy', 'no-referrer');
+  });
 
   app.get('/health', async () => ({ status: 'ok', session: session.status() }));
 

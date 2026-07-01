@@ -1,6 +1,7 @@
 import { config } from '../config.js';
 import * as artlist from '../artlist/client.js';
 import { fetchWithRetry } from '../lib/http.js';
+import { assertPublicUrl } from '../lib/ssrf.js';
 
 const TYPES = {
   image: { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/webp': 'webp' },
@@ -33,6 +34,7 @@ function imageSize(buf) {
  * @returns {{fileKey, fileUrl, mimeType, byteSize, fileName, width?, height?}}
  */
 export async function uploadMedia(url, kind) {
+  await assertPublicUrl(url); // chặn SSRF: URL client cung cấp không được trỏ nội bộ/metadata
   const resp = await fetchWithRetry(url, {}, { retries: 2, timeoutMs: kind === 'image' ? 20000 : 60000 });
   if (!resp.ok) throw new Error(`Không tải được ${kind} nguồn: HTTP ${resp.status}`);
 
