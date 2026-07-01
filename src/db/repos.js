@@ -203,3 +203,17 @@ export const Alerts = {
     return one(await query('SELECT COUNT(*)::int n FROM alerts WHERE resolved=0')).n;
   },
 };
+
+// ─────────────────────────── Settings (key-value dùng chung) ───────────────────────────
+export const Settings = {
+  async get(key) {
+    return one(await query('SELECT value FROM app_settings WHERE key=$1', [key]))?.value ?? null;
+  },
+  async set(key, value) {
+    await query(
+      `INSERT INTO app_settings(key,value,updated_at) VALUES($1,$2,$3)
+       ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value, updated_at=EXCLUDED.updated_at`,
+      [key, value, now()],
+    );
+  },
+};

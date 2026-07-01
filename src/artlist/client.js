@@ -26,6 +26,8 @@ import { uuidv7 } from '../lib/uuid.js';
 
 /** Gọi 1 request tới artlist, kèm auth header + xử lý lỗi chung. */
 async function call({ url, method, body }) {
+  // Nạp cookie mới nhất từ DB (serverless: instance khác có thể vừa gia hạn/đổi cookie).
+  await session.ensureFresh();
   session.assertValid();
 
   const res = await fetchWithRetry(url, {
@@ -34,8 +36,8 @@ async function call({ url, method, body }) {
     body: body ? JSON.stringify(body) : undefined,
   });
 
-  // Tự làm mới cookie (cf_clearance/__cf_bm/session-token) từ Set-Cookie của artlist.
-  try { session.mergeSetCookie(res.headers.getSetCookie?.()); } catch { /* noop */ }
+  // Tự làm mới cookie (cf_clearance/__cf_bm/session-token) từ Set-Cookie của artlist → lưu DB.
+  try { if (session.mergeSetCookie(res.headers.getSetCookie?.())) await session.persist(); } catch { /* noop */ }
 
   const text = await res.text();
 

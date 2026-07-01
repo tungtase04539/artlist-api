@@ -127,4 +127,12 @@ async function migrate() {
     created_at bigint NOT NULL
   )`);
   await _q(`CREATE INDEX IF NOT EXISTS idx_alerts_created ON alerts(created_at)`);
+
+  // Key-value dùng chung mọi instance (serverless): lưu cookie session artlist để
+  // auto-refresh (Set-Cookie) & POST /admin/session tồn tại xuyên suốt các lần gọi.
+  await _q(`CREATE TABLE IF NOT EXISTS app_settings (
+    key text PRIMARY KEY,
+    value text NOT NULL,
+    updated_at bigint NOT NULL
+  )`);
 }

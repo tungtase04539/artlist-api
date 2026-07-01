@@ -114,12 +114,13 @@ export default async function adminRoutes(app) {
   app.post('/admin/sweep', async () => ({ swept: await sweepStaleJobs(0) }));
 
   // ── Session artlist (cập nhật cookie lúc chạy) ──
-  app.get('/admin/session', async () => ({ session: session.status() }));
+  app.get('/admin/session', async () => { await session.ensureFresh(); return { session: session.status() }; });
   app.post('/admin/session/check', async () => ({ health: await checkSessionHealth(), session: session.status() }));
   app.post('/admin/session', async (req, reply) => {
     const s = z.object({ cookie: z.string().min(20), userAgent: z.string().optional(), csrf: z.string().optional() }).safeParse(req.body);
     if (!s.success) return reply.code(400).send({ error: 'Cần cookie (chuỗi cookie đầy đủ)' });
     session.setCredentials(s.data);
+    await session.persist(); // lưu DB để mọi instance serverless dùng chung
     return { ok: true, session: session.status() };
   });
 }
