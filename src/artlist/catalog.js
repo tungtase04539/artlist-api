@@ -12,6 +12,11 @@ const _uiCache = new Map(); // modelGroupId -> { at, data }
 
 const fresh = (e) => e && e.data && Date.now() - e.at < config.CATALOG_TTL_MS;
 
+/** Slug thân thiện từ tên model: "Seedance 2.0" → "seedance-2.0". */
+export function slugifyModel(name) {
+  return String(name || '').toLowerCase().trim().replace(/[^a-z0-9.]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
 function pickCaps(c) {
   if (!c) return null;
   return {
@@ -35,6 +40,7 @@ export async function listVideoModels() {
       if (!feats.some((f) => String(f).includes('video'))) continue; // CHỈ video
       models.push({
         modelGroupId: g.id,
+        slug: slugifyModel(g.name),
         name: g.name,
         category: cat.name,
         credits: g.rating?.value ?? null, // credits cơ bản (giá thật = quote theo settings)
@@ -80,4 +86,21 @@ export async function getModelParams(modelGroupId) {
 export async function isVideoModel(modelGroupId) {
   const models = await listVideoModels();
   return models.some((m) => m.modelGroupId === Number(modelGroupId));
+}
+
+/**
+ * Resolve model từ SỐ (modelGroupId) HOẶC TÊN/slug (không phân biệt hoa thường):
+ * 358 | "358" | "Seedance 2.0" | "seedance-2.0" → 358. Trả null nếu không khớp.
+ */
+export async function resolveModelId(input) {
+  if (input == null || input === '') return null;
+  const models = await listVideoModels();
+  if (typeof input === 'number' || /^\d+$/.test(String(input).trim())) {
+    const id = Number(input);
+    return models.some((m) => m.modelGroupId === id) ? id : null;
+  }
+  const s = slugifyModel(input);
+  const lower = String(input).toLowerCase().trim();
+  const hit = models.find((m) => m.slug === s || String(m.name).toLowerCase().trim() === lower);
+  return hit ? hit.modelGroupId : null;
 }

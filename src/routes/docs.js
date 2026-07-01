@@ -24,7 +24,7 @@ const openapi = {
     '/v1/models/{id}': {
       get: {
         summary: 'Chi tiết model + đầy đủ thông số (settings, options, default)',
-        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' }, description: 'modelGroupId' }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' }, description: 'Tên/slug (vd seedance-2.0) hoặc modelGroupId (vd 358)' }],
         responses: { 200: { description: 'OK' }, 404: { description: 'Không tìm thấy' } },
       },
     },
@@ -42,7 +42,8 @@ const openapi = {
               schema: {
                 type: 'object',
                 properties: {
-                  modelGroupId: { type: 'integer', default: 358, description: 'ID model (GET /v1/models). 358=Seedance 2.0, 416=Seedance 2.0 Mini.' },
+                  model: { type: 'string', description: 'Tên/slug model (khuyến nghị), vd "seedance-2.0" | "Seedance 2.0". Bỏ trống mặc định seedance-2.0.' },
+                  modelGroupId: { type: 'integer', description: 'ID số của model (thay cho `model`). 358=Seedance 2.0, 416=Seedance 2.0 Mini.' },
                   prompt: { type: 'string', description: 'Mô tả video. Có thể chèn tag ảnh @img1..@imgN. (Hoặc đặt trong settings.prompt.)' },
                   settings: {
                     type: 'object', description: 'Thông số khớp GET /v1/models/{id}.',
@@ -66,9 +67,9 @@ const openapi = {
                 },
               },
               examples: {
-                'text-to-video': { value: { modelGroupId: 358, prompt: 'a red panda skateboarding, cinematic', settings: { resolution: '720p', duration: 4, aspect_ratio: '16:9', generate_audio: true }, maxCredits: 2000 } },
-                'image-to-video': { value: { modelGroupId: 358, prompt: 'gentle zoom, cinematic', image: 'https://example.com/photo.jpg', maxCredits: 2000 } },
-                'multi-to-video': { value: { modelGroupId: 358, prompt: 'smooth morphing sequence', images: ['https://example.com/1.jpg', 'https://example.com/2.jpg'], maxCredits: 2000 } },
+                'text-to-video': { value: { model: 'seedance-2.0', prompt: 'a red panda skateboarding, cinematic', settings: { resolution: '720p', duration: 4, aspect_ratio: '16:9', generate_audio: true }, maxCredits: 2000 } },
+                'image-to-video': { value: { model: 'seedance-2.0', prompt: 'gentle zoom, cinematic', image: 'https://example.com/photo.jpg', maxCredits: 2000 } },
+                'multi-to-video': { value: { model: 'seedance-2.0', prompt: 'smooth morphing sequence', images: ['https://example.com/1.jpg', 'https://example.com/2.jpg'], maxCredits: 2000 } },
               },
             },
           },

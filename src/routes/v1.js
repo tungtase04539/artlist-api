@@ -7,7 +7,8 @@ import { session } from '../session/session.js';
 
 const createSchema = z
   .object({
-    modelGroupId: z.number().int().positive().default(358),
+    model: z.string().min(1).optional(), // tên/slug model (vd "Seedance 2.0" | "seedance-2.0") — thay cho số
+    modelGroupId: z.number().int().positive().optional(),
     prompt: z.string().min(1).optional(),
     settings: z.record(z.any()).optional(),
     chatSessionId: z.string().min(1).optional(), // bỏ trống => tự tạo / dùng session mặc định của client
@@ -43,9 +44,10 @@ export default async function v1Routes(app) {
     return { models: await catalog.listVideoModels() };
   });
 
+  // Nhận cả SỐ (358) lẫn TÊN/slug ("seedance-2.0", "Seedance 2.0").
   app.get('/v1/models/:id', async (req, reply) => {
-    const id = Number(req.params.id);
-    if (!(await catalog.isVideoModel(id))) return reply.code(404).send({ error: 'Không tìm thấy model video' });
+    const id = await catalog.resolveModelId(req.params.id);
+    if (!id) return reply.code(404).send({ error: 'Không tìm thấy model video' });
     const [models, params] = await Promise.all([catalog.listVideoModels(), catalog.getModelParams(id)]);
     return { ...models.find((m) => m.modelGroupId === id), params: params.params };
   });
@@ -54,8 +56,16 @@ export default async function v1Routes(app) {
     if (!session.isReady()) return reply.code(503).send({ error: 'Dịch vụ chưa sẵn sàng (session nguồn).' });
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'Tham số không hợp lệ', issues: parsed.error.issues });
+    // Chọn model theo TÊN (khuyến nghị) hoặc SỐ; mặc định Seedance 2.0 (358).
+    let modelGroupId = 358;
+    if (parsed.data.model != null) {
+      modelGroupId = await catalog.resolveModelId(parsed.data.model);
+      if (!modelGroupId) return reply.code(400).send({ error: `Không tìm thấy model '${parsed.data.model}' (xem GET /v1/models).`, code: 'INVALID_MODEL' });
+    } else if (parsed.data.modelGroupId != null) {
+      modelGroupId = parsed.data.modelGroupId;
+    }
     try {
-      const job = await service.createVideo(req.client, parsed.data, req.realIp ?? req.ip);
+      const job = await service.createVideo(req.client, { ...parsed.data, modelGroupId }, req.realIp ?? req.ip);
       return reply.code(202).send(service.publicJob(job));
     } catch (e) {
       req.log.warn({ code: e.code, err: String(e.message) }, 'createVideo lỗi');
