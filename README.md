@@ -17,15 +17,24 @@ Admin (bạn)         ──ADMIN_TOKEN─▶ /admin/* + /dashboard (clients, ke
 SQLite: clients · api_keys · credit_ledger · jobs · usage_events · alerts
 ```
 
-## Cài & chạy
+## Cài & chạy (local)
 ```bash
 npm install
-cp .env.example .env      # điền ADMIN_TOKEN (bắt buộc) + ARTLIST_COOKIE + ARTLIST_USER_AGENT
-npm run dev
+cp .env.example .env      # ADMIN_TOKEN (bắt buộc) + ARTLIST_COOKIE + ARTLIST_USER_AGENT
+npm run dev               # DB: để trống DATABASE_URL => PGlite in-process (không cần cài Postgres)
 ```
 - Docs (Swagger): `http://localhost:3000/docs`
 - Dashboard admin: `http://localhost:3000/dashboard` (nhập ADMIN_TOKEN)
 - Health: `GET /health`
+
+**DB**: prod dùng **Postgres/Supabase** qua `DATABASE_URL`; local để trống → **PGlite** (Postgres in-process, cùng schema).
+
+## Deploy: Vercel + Supabase
+1. Tạo project **Supabase** → lấy connection string (dùng **pooler** `:6543`) đặt vào `DATABASE_URL`.
+2. Deploy repo lên **Vercel** (đã có `vercel.json`: mọi path → `api/index.js`; **Cron** gọi `/cron/sweep` mỗi phút).
+3. Env trên Vercel: `ADMIN_TOKEN`, `DATABASE_URL`, `ARTLIST_COOKIE`, `ARTLIST_USER_AGENT`, `CRON_SECRET` (Vercel tự gửi Bearer cho cron).
+4. ⚠️ IP serverless **xoay** → `cf_clearance` dễ bị Cloudflare challenge. Nên định tuyến call artlist qua **1 egress IP cố định** (proxy) khớp trình duyệt tạo cookie.
+- Không poll nền: `GET /v1/videos/:id` tự đẩy trạng thái; **Cron** `/cron/sweep` dọn job treo + hoàn credits.
 
 ## Quy trình Admin
 Tất cả `/admin/*` cần header `x-admin-token: <ADMIN_TOKEN>`.
@@ -44,7 +53,10 @@ curl -X POST localhost:3000/admin/keys/<keyId>/revoke -H "x-admin-token: $T"
 # 4) Khoá / mở client
 curl -X POST localhost:3000/admin/clients/<id>/status -H "x-admin-token: $T" -d '{"status":"suspended"}'
 
-# 5) Cập nhật cookie artlist LÚC CHẠY (khi hết hạn, không cần restart)
+# 5) Gán session artlist mặc định cho client (client khỏi phải truyền chatSessionId)
+curl -X POST localhost:3000/admin/clients/<id>/session -H "x-admin-token: $T" -d '{"chatSessionId":"<id-tu-URL-artlist>"}'
+
+# 6) Cập nhật cookie artlist LÚC CHẠY (khi hết hạn, không cần restart)
 curl -X POST localhost:3000/admin/session -H "x-admin-token: $T" -d '{"cookie":"<cookie>","userAgent":"<UA>"}'
 
 # 6) Xem thống kê / cảnh báo / usage
@@ -76,7 +88,7 @@ curl localhost:3000/v1/videos/<jobId> -H "x-api-key: $K"
 ```
 - Giá **thật** tính theo `modelGroupId + settings` (server artlist resolve model + báo giá). `resolution:1080p` → model & giá khác `720p`.
 - `maxCredits`: trần giá (từ chối nếu quote vượt). `expectedCredits`: giá bạn dự tính (lệch → từ chối, chống nhầm/cheat).
-- ⚠️ `chatSessionId` phải là **session artlist có sẵn** (admin lấy từ URL `toolkit.artlist.io/{id}` rồi cấp cho client).
+- `chatSessionId`: **session artlist có sẵn**. Có thể bỏ trống nếu admin đã gán **session mặc định** cho client (`POST /admin/clients/:id/session`); nếu không, client tự truyền. (Auto-tạo session đang nghiên cứu.)
 
 ## Hạn mức & billing
 - Mỗi client có **số dư credits** (admin nạp). Tạo video trừ theo **giá quote thật**; **hoàn credits** nếu create/poll thất bại.
@@ -101,15 +113,18 @@ npm run test:quote  # smoke QUOTE read-only (cần .env cookie) — kiểm tra s
 
 ## Cấu trúc
 ```
+api/index.js            # entry serverless Vercel (mọi path → Fastify)
 src/
-├── index.js            # bootstrap: mount /v1, /admin, /docs, /health
-├── config.js           # env (ADMIN_TOKEN, artlist, rate limits, ngưỡng abuse)
-├── db/                 # SQLite (node:sqlite) + repos (clients/keys/credits/jobs/usage/alerts)
+├── app.js              # buildApp() dùng chung standalone & serverless
+├── index.js            # standalone (VPS/local) + interval sweep
+├── config.js           # env (ADMIN_TOKEN, DATABASE_URL, artlist, rate limits, ngưỡng abuse)
+├── db/                 # Postgres (pg/Supabase) hoặc PGlite (local) + repos
 ├── auth/               # clientAuth (X-API-Key) · adminAuth (ADMIN_TOKEN)
 ├── artlist/            # client + endpoints (tRPC) + catalog (models/params) + session
-├── videos/service.js   # quote → trừ credits → create → poll → hoàn tiền nếu lỗi
-├── abuse/monitor.js    # rate limit + phát hiện cheat + alerts
-├── routes/             # v1 (client) · admin · docs (openapi/swagger/dashboard)
+├── videos/service.js   # quote → trừ credits → create; advanceJob (poll on-demand) + sweep
+├── abuse/monitor.js    # rate limit + phát hiện cheat + alerts (dedup qua DB)
+├── routes/             # v1 (client) · admin · docs · system (/cron/sweep)
 └── dashboard/          # trang admin tĩnh
+vercel.json             # rewrites + cron /cron/sweep
 ```
 Chi tiết reverse-engineering artlist: xem `docs/`.

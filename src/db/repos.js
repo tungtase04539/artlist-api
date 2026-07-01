@@ -1,180 +1,202 @@
-import { db } from './db.js';
+import { query } from './db.js';
 import { uuidv7 } from '../lib/uuid.js';
 import { sha256, generateApiKey } from '../lib/crypto.js';
 
 const now = () => Date.now();
+const one = (r) => r.rows[0] ?? null;
 
 // ─────────────────────────── Clients ───────────────────────────
 export const Clients = {
-  create({ name, credits = 0, ratePerMin, ratePerDay, notes = null }) {
+  async create({ name, credits = 0, ratePerMin, ratePerDay, notes = null, defaultChatSessionId = null }) {
     const id = uuidv7();
-    db().prepare(
-      `INSERT INTO clients(id,name,credits,rate_per_min,rate_per_day,status,notes,created_at)
-       VALUES(?,?,?,?,?, 'active', ?, ?)`,
-    ).run(id, name, credits, ratePerMin, ratePerDay, notes, now());
+    await query(
+      `INSERT INTO clients(id,name,credits,rate_per_min,rate_per_day,status,notes,default_chat_session_id,created_at)
+       VALUES($1,$2,$3,$4,$5,'active',$6,$7,$8)`,
+      [id, name, credits, ratePerMin, ratePerDay, notes, defaultChatSessionId, now()],
+    );
     return this.get(id);
   },
-  get(id) {
-    return db().prepare('SELECT * FROM clients WHERE id=?').get(id) ?? null;
+  async get(id) {
+    return one(await query('SELECT * FROM clients WHERE id=$1', [id]));
   },
-  list() {
-    return db().prepare('SELECT * FROM clients ORDER BY created_at DESC').all();
+  async list() {
+    return (await query('SELECT * FROM clients ORDER BY created_at DESC')).rows;
   },
-  setStatus(id, status) {
-    db().prepare('UPDATE clients SET status=? WHERE id=?').run(status, id);
+  async setStatus(id, status) {
+    await query('UPDATE clients SET status=$1 WHERE id=$2', [status, id]);
     return this.get(id);
   },
-  setLimits(id, ratePerMin, ratePerDay) {
-    db().prepare('UPDATE clients SET rate_per_min=?, rate_per_day=? WHERE id=?').run(ratePerMin, ratePerDay, id);
+  async setLimits(id, ratePerMin, ratePerDay) {
+    await query('UPDATE clients SET rate_per_min=$1, rate_per_day=$2 WHERE id=$3', [ratePerMin, ratePerDay, id]);
+    return this.get(id);
+  },
+  async setDefaultSession(id, sessionId) {
+    await query('UPDATE clients SET default_chat_session_id=$1 WHERE id=$2', [sessionId, id]);
     return this.get(id);
   },
 };
 
 // ─────────────────────────── API keys ───────────────────────────
 export const ApiKeys = {
-  /** Tạo key mới cho client. Trả về { raw, record } — raw chỉ hiện 1 lần. */
-  create(clientId) {
+  async create(clientId) {
     const { key, hash, prefix } = generateApiKey();
     const id = uuidv7();
-    db().prepare(
-      `INSERT INTO api_keys(id,client_id,key_hash,key_prefix,status,created_at) VALUES(?,?,?,?, 'active', ?)`,
-    ).run(id, clientId, hash, prefix, now());
-    return { raw: key, record: db().prepare('SELECT id,client_id,key_prefix,status,created_at FROM api_keys WHERE id=?').get(id) };
+    await query(
+      `INSERT INTO api_keys(id,client_id,key_hash,key_prefix,status,created_at) VALUES($1,$2,$3,$4,'active',$5)`,
+      [id, clientId, hash, prefix, now()],
+    );
+    return { raw: key, record: one(await query('SELECT id,client_id,key_prefix,status,created_at FROM api_keys WHERE id=$1', [id])) };
   },
-  /** Tra key thô -> record active (kèm client). */
-  resolve(rawKey) {
-    const row = db().prepare(
+  async resolve(rawKey) {
+    return one(await query(
       `SELECT k.*, c.status AS client_status FROM api_keys k JOIN clients c ON c.id=k.client_id
-       WHERE k.key_hash=? AND k.status='active'`,
-    ).get(sha256(rawKey));
-    return row ?? null;
+       WHERE k.key_hash=$1 AND k.status='active'`,
+      [sha256(rawKey)],
+    ));
   },
-  touch(id) {
-    db().prepare('UPDATE api_keys SET last_used_at=? WHERE id=?').run(now(), id);
+  async touch(id) {
+    await query('UPDATE api_keys SET last_used_at=$1 WHERE id=$2', [now(), id]);
   },
-  listByClient(clientId) {
-    return db().prepare('SELECT id,key_prefix,status,created_at,last_used_at FROM api_keys WHERE client_id=? ORDER BY created_at DESC').all(clientId);
+  async listByClient(clientId) {
+    return (await query('SELECT id,key_prefix,status,created_at,last_used_at FROM api_keys WHERE client_id=$1 ORDER BY created_at DESC', [clientId])).rows;
   },
-  revoke(id) {
-    db().prepare(`UPDATE api_keys SET status='revoked' WHERE id=?`).run(id);
+  async revoke(id) {
+    await query(`UPDATE api_keys SET status='revoked' WHERE id=$1`, [id]);
   },
 };
 
 // ─────────────────────────── Credits ───────────────────────────
 export const Credits = {
-  balance(clientId) {
-    return db().prepare('SELECT credits FROM clients WHERE id=?').get(clientId)?.credits ?? 0;
+  async balance(clientId) {
+    return one(await query('SELECT credits FROM clients WHERE id=$1', [clientId]))?.credits ?? 0;
   },
   /**
-   * Thay đổi số dư 1 cách nguyên tử (transaction) và ghi sổ cái.
-   * amount < 0 = trừ (usage), > 0 = cộng (topup/refund).
-   * Trả { ok, balance }. ok=false nếu trừ mà không đủ số dư.
+   * Đổi số dư NGUYÊN TỬ bằng 1 câu UPDATE có điều kiện (không cho âm).
+   * amount<0 = trừ, >0 = cộng. Trả { ok, balance }.
    */
-  change(clientId, amount, reason, jobId = null) {
-    const d = db();
-    const tx = d.prepare('BEGIN'); tx.run();
-    try {
-      const row = d.prepare('SELECT credits FROM clients WHERE id=?').get(clientId);
-      if (!row) { d.prepare('ROLLBACK').run(); return { ok: false, balance: 0 }; }
-      const next = row.credits + amount;
-      if (next < 0) { d.prepare('ROLLBACK').run(); return { ok: false, balance: row.credits }; }
-      d.prepare('UPDATE clients SET credits=? WHERE id=?').run(next, clientId);
-      d.prepare(
-        'INSERT INTO credit_ledger(client_id,delta,reason,job_id,balance_after,created_at) VALUES(?,?,?,?,?,?)',
-      ).run(clientId, amount, reason, jobId, next, now());
-      d.prepare('COMMIT').run();
-      return { ok: true, balance: next };
-    } catch (e) {
-      d.prepare('ROLLBACK').run();
-      throw e;
+  async change(clientId, amount, reason, jobId = null) {
+    const r = await query(
+      'UPDATE clients SET credits = credits + $1 WHERE id=$2 AND credits + $1 >= 0 RETURNING credits',
+      [amount, clientId],
+    );
+    if (!r.rows.length) {
+      return { ok: false, balance: await this.balance(clientId) };
     }
+    const balance = r.rows[0].credits;
+    await query(
+      'INSERT INTO credit_ledger(client_id,delta,reason,job_id,balance_after,created_at) VALUES($1,$2,$3,$4,$5,$6)',
+      [clientId, amount, reason, jobId, balance, now()],
+    );
+    return { ok: true, balance };
   },
-  ledger(clientId, limit = 100) {
-    return db().prepare('SELECT * FROM credit_ledger WHERE client_id=? ORDER BY id DESC LIMIT ?').all(clientId, limit);
+  async ledger(clientId, limit = 100) {
+    return (await query('SELECT * FROM credit_ledger WHERE client_id=$1 ORDER BY id DESC LIMIT $2', [clientId, limit])).rows;
   },
 };
 
 // ─────────────────────────── Jobs ───────────────────────────
+const JOB_COLS = ['provider_job_id', 'status', 'price', 'refunded', 'video_url', 'thumbnail_url', 'error'];
 export const Jobs = {
-  create({ id, clientId, prompt, params, price }) {
+  async create({ id, clientId, prompt, params, price }) {
     const t = now();
-    db().prepare(
+    await query(
       `INSERT INTO jobs(id,client_id,status,prompt,params_json,price,created_at,updated_at)
-       VALUES(?,?, 'pending', ?, ?, ?, ?, ?)`,
-    ).run(id, clientId, prompt, JSON.stringify(params ?? {}), price ?? 0, t, t);
+       VALUES($1,$2,'pending',$3,$4,$5,$6,$6)`,
+      [id, clientId, prompt, JSON.stringify(params ?? {}), price ?? 0, t],
+    );
     return this.get(id);
   },
-  get(id) {
-    return db().prepare('SELECT * FROM jobs WHERE id=?').get(id) ?? null;
+  async get(id) {
+    return one(await query('SELECT * FROM jobs WHERE id=$1', [id]));
   },
-  update(id, patch) {
-    const cur = this.get(id);
-    if (!cur) return null;
-    const next = { ...cur, ...patch, updated_at: now() };
-    db().prepare(
-      `UPDATE jobs SET provider_job_id=?, status=?, price=?, refunded=?, video_url=?, thumbnail_url=?, error=?, updated_at=? WHERE id=?`,
-    ).run(next.provider_job_id, next.status, next.price, next.refunded ? 1 : 0, next.video_url, next.thumbnail_url, next.error, next.updated_at, id);
+  async update(id, patch) {
+    const sets = [];
+    const vals = [];
+    let i = 1;
+    for (const col of JOB_COLS) {
+      if (col in patch) {
+        sets.push(`${col}=$${i++}`);
+        vals.push(col === 'refunded' ? (patch[col] ? 1 : 0) : patch[col]);
+      }
+    }
+    sets.push(`updated_at=$${i++}`);
+    vals.push(now());
+    vals.push(id);
+    await query(`UPDATE jobs SET ${sets.join(', ')} WHERE id=$${i}`, vals);
     return this.get(id);
   },
-  listByClient(clientId, limit = 100) {
-    return db().prepare('SELECT * FROM jobs WHERE client_id=? ORDER BY created_at DESC LIMIT ?').all(clientId, limit);
+  async listByClient(clientId, limit = 100) {
+    return (await query('SELECT * FROM jobs WHERE client_id=$1 ORDER BY created_at DESC LIMIT $2', [clientId, limit])).rows;
   },
-  listProcessing() {
-    return db().prepare(`SELECT * FROM jobs WHERE status IN ('pending','processing')`).all();
+  async listProcessing(olderThanMs = 0, limit = 100) {
+    return (await query(
+      `SELECT * FROM jobs WHERE status IN ('pending','processing') AND updated_at <= $1 ORDER BY updated_at ASC LIMIT $2`,
+      [now() - olderThanMs, limit],
+    )).rows;
   },
 };
 
-// ─────────────────────────── Usage events ───────────────────────────
+// ─────────────────────────── Usage ───────────────────────────
 export const Usage = {
-  record({ clientId = null, apiKeyId = null, type, path = null, statusCode = null, ip = null, meta = null }) {
-    db().prepare(
-      'INSERT INTO usage_events(client_id,api_key_id,type,path,status_code,ip,meta_json,created_at) VALUES(?,?,?,?,?,?,?,?)',
-    ).run(clientId, apiKeyId, type, path, statusCode, ip, meta ? JSON.stringify(meta) : null, now());
+  async record({ clientId = null, apiKeyId = null, type, path = null, statusCode = null, ip = null, meta = null }) {
+    await query(
+      'INSERT INTO usage_events(client_id,api_key_id,type,path,status_code,ip,meta_json,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',
+      [clientId, apiKeyId, type, path, statusCode, ip, meta ? JSON.stringify(meta) : null, now()],
+    );
   },
-  /** Đếm event của client theo type trong khoảng windowMs gần đây. */
-  countRecent(clientId, sinceMs, types = null) {
+  async countRecent(clientId, sinceMs, types = null) {
     const since = now() - sinceMs;
     if (types) {
-      const q = types.map(() => '?').join(',');
-      return db().prepare(
-        `SELECT COUNT(*) n FROM usage_events WHERE client_id=? AND created_at>=? AND type IN (${q})`,
-      ).get(clientId, since, ...types).n;
+      const ph = types.map((_, i) => `$${i + 3}`).join(',');
+      return one(await query(
+        `SELECT COUNT(*)::int n FROM usage_events WHERE client_id=$1 AND created_at>=$2 AND type IN (${ph})`,
+        [clientId, since, ...types],
+      )).n;
     }
-    return db().prepare('SELECT COUNT(*) n FROM usage_events WHERE client_id=? AND created_at>=?').get(clientId, since).n;
+    return one(await query('SELECT COUNT(*)::int n FROM usage_events WHERE client_id=$1 AND created_at>=$2', [clientId, since])).n;
   },
-  distinctIps(clientId, sinceMs) {
-    const since = now() - sinceMs;
-    return db().prepare(
-      'SELECT COUNT(DISTINCT ip) n FROM usage_events WHERE client_id=? AND created_at>=? AND ip IS NOT NULL',
-    ).get(clientId, since).n;
+  async distinctIps(clientId, sinceMs) {
+    return one(await query(
+      'SELECT COUNT(DISTINCT ip)::int n FROM usage_events WHERE client_id=$1 AND created_at>=$2 AND ip IS NOT NULL',
+      [clientId, now() - sinceMs],
+    )).n;
   },
-  errorRate(clientId, sinceMs) {
+  async errorRate(clientId, sinceMs) {
     const since = now() - sinceMs;
-    const total = db().prepare('SELECT COUNT(*) n FROM usage_events WHERE client_id=? AND created_at>=?').get(clientId, since).n;
-    const errs = db().prepare(
-      `SELECT COUNT(*) n FROM usage_events WHERE client_id=? AND created_at>=? AND (type IN ('error','quota_block','rate_block') OR status_code>=400)`,
-    ).get(clientId, since).n;
+    const total = one(await query('SELECT COUNT(*)::int n FROM usage_events WHERE client_id=$1 AND created_at>=$2', [clientId, since])).n;
+    const errs = one(await query(
+      `SELECT COUNT(*)::int n FROM usage_events WHERE client_id=$1 AND created_at>=$2 AND (type IN ('error','quota_block','rate_block') OR status_code>=400)`,
+      [clientId, since],
+    )).n;
     return { total, errs, rate: total ? errs / total : 0 };
   },
-  recent(limit = 200) {
-    return db().prepare('SELECT * FROM usage_events ORDER BY id DESC LIMIT ?').all(limit);
+  async recent(limit = 200) {
+    return (await query('SELECT * FROM usage_events ORDER BY id DESC LIMIT $1', [limit])).rows;
   },
 };
 
 // ─────────────────────────── Alerts ───────────────────────────
 export const Alerts = {
-  add({ clientId = null, severity, kind, message, meta = null }) {
-    db().prepare(
-      'INSERT INTO alerts(client_id,severity,kind,message,meta_json,created_at) VALUES(?,?,?,?,?,?)',
-    ).run(clientId, severity, kind, message, meta ? JSON.stringify(meta) : null, now());
+  async add({ clientId = null, severity, kind, message, meta = null }) {
+    await query(
+      'INSERT INTO alerts(client_id,severity,kind,message,meta_json,created_at) VALUES($1,$2,$3,$4,$5,$6)',
+      [clientId, severity, kind, message, meta ? JSON.stringify(meta) : null, now()],
+    );
   },
-  list(limit = 200) {
-    return db().prepare('SELECT * FROM alerts ORDER BY id DESC LIMIT ?').all(limit);
+  /** Có alert cùng (client, kind) chưa xử lý trong windowMs không (để chống spam alert). */
+  async existsRecent(clientId, kind, windowMs) {
+    return Boolean(one(await query(
+      'SELECT 1 FROM alerts WHERE client_id IS NOT DISTINCT FROM $1 AND kind=$2 AND created_at>=$3 LIMIT 1',
+      [clientId, kind, now() - windowMs],
+    )));
   },
-  resolve(id) {
-    db().prepare('UPDATE alerts SET resolved=1 WHERE id=?').run(id);
+  async list(limit = 200) {
+    return (await query('SELECT * FROM alerts ORDER BY id DESC LIMIT $1', [limit])).rows;
   },
-  countUnresolved() {
-    return db().prepare('SELECT COUNT(*) n FROM alerts WHERE resolved=0').get().n;
+  async resolve(id) {
+    await query('UPDATE alerts SET resolved=1 WHERE id=$1', [id]);
+  },
+  async countUnresolved() {
+    return one(await query('SELECT COUNT(*)::int n FROM alerts WHERE resolved=0')).n;
   },
 };

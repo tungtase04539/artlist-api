@@ -10,8 +10,11 @@ const schema = z.object({
   // Admin: token bảo vệ toàn bộ /admin/* và dashboard.
   ADMIN_TOKEN: z.string().min(16, 'ADMIN_TOKEN cần >= 16 ký tự (openssl rand -hex 32)'),
 
-  // SQLite file (clients, keys, credits, jobs, usage, alerts).
-  DB_PATH: z.string().default('data/artlist-api.db'),
+  // DB: Postgres/Supabase (prod). Để trống => PGlite in-process (local/test).
+  DATABASE_URL: z.string().optional(),
+  PGLITE_DIR: z.string().optional(), // thư mục lưu PGlite local (trống => in-memory)
+  PG_POOL_MAX: z.coerce.number().int().positive().default(5),
+  CRON_SECRET: z.string().optional(), // bảo vệ /cron/sweep (Vercel Cron gửi Bearer)
 
   // Nguyên liệu artlist (admin cung cấp). Điền sau khi bắt request.
   ARTLIST_BASE_URL: z.string().url().optional(),
@@ -50,8 +53,3 @@ if (!parsed.success) {
 }
 
 export const config = parsed.data;
-
-/** True nếu đã đủ cấu hình để gọi sang artlist. */
-export function isArtlistConfigured() {
-  return Boolean(config.ARTLIST_BASE_URL && (config.ARTLIST_COOKIE || config.ARTLIST_AUTH_TOKEN));
-}

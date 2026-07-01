@@ -10,15 +10,13 @@ const createSchema = z
     modelGroupId: z.number().int().positive().default(358),
     prompt: z.string().min(1).optional(),
     settings: z.record(z.any()).optional(),
-    chatSessionId: z.string().min(1),
+    chatSessionId: z.string().min(1).optional(), // bỏ trống => dùng session mặc định admin gán cho client
     image: z.string().url().optional(),
     feature: z.string().optional(),
-    // shorthand (nếu không dùng `settings`):
     duration: z.number().int().positive().optional(),
     resolution: z.string().optional(),
     aspectRatio: z.string().optional(),
     generateAudio: z.boolean().optional(),
-    // bảo vệ giá:
     expectedCredits: z.number().int().optional(),
     maxCredits: z.number().int().positive().optional(),
   })
@@ -28,15 +26,14 @@ const createSchema = z
 export default async function v1Routes(app) {
   app.addHook('preHandler', clientAuth);
 
-  // Thông tin tài khoản + số dư.
   app.get('/v1/me', async (req) => ({
     clientId: req.client.id,
     name: req.client.name,
-    credits: Credits.balance(req.client.id),
+    credits: await Credits.balance(req.client.id),
+    hasDefaultSession: Boolean(req.client.default_chat_session_id),
     rateLimit: { perMinute: req.client.rate_per_min, perDay: req.client.rate_per_day },
   }));
 
-  // Danh sách model video + thông số.
   app.get('/v1/models', async (req, reply) => {
     if (!session.isReady()) return reply.code(503).send({ error: 'Dịch vụ chưa sẵn sàng (session nguồn).' });
     return { models: await catalog.listVideoModels() };
@@ -49,7 +46,6 @@ export default async function v1Routes(app) {
     return { ...models.find((m) => m.modelGroupId === id), params: params.params };
   });
 
-  // Tạo video (async).
   app.post('/v1/videos', async (req, reply) => {
     if (!session.isReady()) return reply.code(503).send({ error: 'Dịch vụ chưa sẵn sàng (session nguồn).' });
     const parsed = createSchema.safeParse(req.body);
@@ -63,14 +59,15 @@ export default async function v1Routes(app) {
     }
   });
 
-  // Trạng thái job (chỉ job của chính client).
+  // Poll on-demand: mỗi lần hỏi sẽ đẩy trạng thái từ artlist (serverless-friendly).
   app.get('/v1/videos/:id', async (req, reply) => {
-    const job = Jobs.get(req.params.id);
+    let job = await Jobs.get(req.params.id);
     if (!job || job.client_id !== req.client.id) return reply.code(404).send({ error: 'Không tìm thấy job' });
+    if (['pending', 'processing'].includes(job.status)) job = await service.advanceJob(job);
     return service.publicJob(job);
   });
 
-  app.get('/v1/videos', async (req) => Jobs.listByClient(req.client.id, 100).map(service.publicJob));
+  app.get('/v1/videos', async (req) => (await Jobs.listByClient(req.client.id, 100)).map(service.publicJob));
 }
 
 function mapError(code) {
