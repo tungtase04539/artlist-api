@@ -100,4 +100,9 @@ export default async function docsRoutes(app) {
   app.get('/dashboard', async (req, reply) => {
     reply.type('text/html').send(readFileSync(join(__dir, '../dashboard/index.html'), 'utf8'));
   });
+
+  // 中文使用指南（给客户）— Chinese usage guide for clients.
+  app.get('/guide', async (req, reply) => {
+    reply.type('text/html').send(readFileSync(join(__dir, '../dashboard/guide-zh.html'), 'utf8'));
+  });
 }

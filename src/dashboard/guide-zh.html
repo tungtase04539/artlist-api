@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Artlist 视频生成 API · 使用指南</title>
+<style>
+  :root { --bg:#0f1420; --card:#161d2d; --line:#24304a; --fg:#e6e9ef; --mut:#8a93a6; --acc:#8fb0ff; --code:#0b0f18; }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif; margin:0; background:var(--bg); color:var(--fg); line-height:1.65; }
+  header { background:var(--card); border-bottom:1px solid var(--line); padding:18px 22px; }
+  header h1 { font-size:19px; margin:0; }
+  header p { margin:6px 0 0; color:var(--mut); font-size:13px; }
+  main { max-width:960px; margin:auto; padding:22px; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:18px 20px; margin-bottom:18px; }
+  h2 { font-size:16px; color:var(--acc); margin:0 0 12px; border-left:3px solid var(--acc); padding-left:9px; }
+  h3 { font-size:14px; margin:16px 0 6px; }
+  code { background:var(--code); padding:2px 6px; border-radius:4px; font-size:13px; color:#ffd479; }
+  pre { background:var(--code); border:1px solid var(--line); border-radius:8px; padding:12px 14px; overflow:auto; font-size:12.5px; line-height:1.55; }
+  pre code { background:none; padding:0; color:#dfe6f5; }
+  table { width:100%; border-collapse:collapse; font-size:13px; margin:6px 0; }
+  th, td { text-align:left; padding:7px 9px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--acc); font-weight:600; }
+  .mut { color:var(--mut); font-size:12.5px; }
+  .tag { display:inline-block; padding:1px 7px; border-radius:5px; font-size:11px; font-weight:600; }
+  .get { background:#14361f; color:#7ee2a1; } .post { background:#1a2b57; color:#8fb0ff; }
+  .warn { background:#3a2417; border:1px solid #6b4a2a; border-radius:8px; padding:10px 12px; color:#ffcf9e; font-size:13px; }
+  a { color:var(--acc); }
+  ul { margin:6px 0; padding-left:20px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎬 Artlist 视频生成 API · 使用指南</h1>
+  <p>基于 Seedance 2.0 等模型的 AI 视频生成接口 · 仅需 API（无需界面）· Base URL：<code>https://artlist-api.vercel.app</code></p>
+</header>
+<main>
+
+  <section>
+    <h2>1. 概述</h2>
+    <ul>
+      <li>纯 REST API，返回 JSON。支持<b>文生视频</b>、<b>图生视频</b>、<b>多图生视频</b>（最多 9 张）。</li>
+      <li>异步流程：<code>POST /v1/videos</code> 提交任务 → 轮询 <code>GET /v1/videos/{id}</code> 直到 <code>status=done</code> 拿到视频链接。</li>
+      <li>按<b>积分（credits）</b>计费，价格由模型 + 参数决定。你的额度和限流由管理方分配。</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>2. 认证</h2>
+    <p>所有 <code>/v1/*</code> 接口都需在请求头带上你的密钥：</p>
+    <pre><code>x-api-key: &lt;你的 API_KEY&gt;</code></pre>
+    <p class="mut">密钥形如 <code>alk_xxxxxxxx...</code>，请妥善保管、勿泄露。缺失或错误返回 <code>401</code>。</p>
+  </section>
+
+  <section>
+    <h2>3. 快速开始</h2>
+    <pre><code>KEY="&lt;你的 API_KEY&gt;"
+BASE="https://artlist-api.vercel.app"
+
+# ① 提交生成任务
+curl -X POST "$BASE/v1/videos" -H "x-api-key: $KEY" \
+  -H 'content-type: application/json' \
+  -d '{"modelGroupId":358,"prompt":"a red panda skateboarding, cinematic","maxCredits":2000}'
+# → {"jobId":"...", "status":"processing", "credits":1200}
+
+# ② 用返回的 jobId 轮询（建议每 3~5 秒一次）
+curl "$BASE/v1/videos/&lt;jobId&gt;" -H "x-api-key: $KEY"
+# → status=processing … 最终 → {"status":"done","videoUrl":"https://...mp4?Expires=...&Signature=...","credits":1200}</code></pre>
+  </section>
+
+  <section>
+    <h2>4. 接口列表</h2>
+    <table>
+      <tr><th>方法</th><th>路径</th><th>说明</th></tr>
+      <tr><td><span class="tag get">GET</span></td><td><code>/v1/me</code></td><td>账户信息 + 剩余积分 + 限流</td></tr>
+      <tr><td><span class="tag get">GET</span></td><td><code>/v1/models</code></td><td>可用视频模型列表（含 modelGroupId、features）</td></tr>
+      <tr><td><span class="tag get">GET</span></td><td><code>/v1/models/{id}</code></td><td>某模型的完整参数（可选项、默认值）</td></tr>
+      <tr><td><span class="tag post">POST</span></td><td><code>/v1/videos</code></td><td>创建视频（异步），返回 jobId</td></tr>
+      <tr><td><span class="tag get">GET</span></td><td><code>/v1/videos/{id}</code></td><td>查询任务状态，done 时含 videoUrl</td></tr>
+      <tr><td><span class="tag get">GET</span></td><td><code>/v1/videos</code></td><td>你的历史任务列表</td></tr>
+    </table>
+    <p class="mut">机器可读文档（OpenAPI）：<a href="/openapi.json">/openapi.json</a> · 在线调试：<a href="/docs">/docs</a></p>
+  </section>
+
+  <section>
+    <h2>5. 创建视频 · POST /v1/videos</h2>
+    <p>请求体为 JSON。必须提供 <code>prompt</code>（或放在 <code>settings.prompt</code> 里）。</p>
+    <table>
+      <tr><th>字段</th><th>类型</th><th>说明</th></tr>
+      <tr><td><code>modelGroupId</code></td><td>int</td><td>模型 ID（见 /v1/models）。默认 <code>358</code>=Seedance 2.0，<code>416</code>=Seedance 2.0 Mini。</td></tr>
+      <tr><td><code>prompt</code></td><td>string</td><td>视频描述文字。可在文中插入图片标签 <code>@img1 @img2 …</code>。</td></tr>
+      <tr><td><code>settings</code></td><td>object</td><td>与 /v1/models/{id} 对应，如 <code>resolution</code>、<code>duration</code>、<code>aspect_ratio</code>、<code>generate_audio</code>。</td></tr>
+      <tr><td><code>image</code></td><td>uri</td><td>单张图片（图生视频）。公网 http/https 链接。</td></tr>
+      <tr><td><code>images[]</code></td><td>uri[]</td><td>最多 9 张图片（多图生视频）。</td></tr>
+      <tr><td><code>videos[]</code> / <code>audios[]</code></td><td>uri[]</td><td>输入视频 / 音频。</td></tr>
+      <tr><td><code>endFrame</code></td><td>uri</td><td>结尾帧图片。</td></tr>
+      <tr><td><code>resolution / duration / aspectRatio / generateAudio</code></td><td>—</td><td><code>settings.*</code> 的简写形式。</td></tr>
+      <tr><td><code>maxCredits</code></td><td>int</td><td>价格上限：报价超过则拒绝，防止意外超支。<b>建议每次都带上。</b></td></tr>
+      <tr><td><code>expectedCredits</code></td><td>int</td><td>你预期的价格：与真实报价不符则拒绝（防错/防篡改）。</td></tr>
+      <tr><td><code>chatSessionId</code></td><td>string</td><td>可选，留空则系统自动创建/复用会话。</td></tr>
+    </table>
+    <p class="mut">媒体输入必须是<b>公网可访问</b>的 http/https 链接（不接受内网/IP 私网地址）；服务器会自动下载并上传。图片 png/jpg/webp，视频 mp4/mov/webm，音频 mp3/wav/m4a/aac。</p>
+
+    <h3>示例：图生视频</h3>
+    <pre><code>curl -X POST "$BASE/v1/videos" -H "x-api-key: $KEY" -H 'content-type: application/json' -d '{
+  "modelGroupId": 358,
+  "prompt": "gentle zoom in, cinematic lighting",
+  "image": "https://example.com/photo.jpg",
+  "maxCredits": 2000
+}'</code></pre>
+
+    <h3>示例：多图生视频（最多 9 张）</h3>
+    <pre><code>curl -X POST "$BASE/v1/videos" -H "x-api-key: $KEY" -H 'content-type: application/json' -d '{
+  "modelGroupId": 358,
+  "prompt": "smooth morphing sequence with ambient soundtrack",
+  "images": ["https://example.com/1.jpg", "https://example.com/2.jpg", "https://example.com/3.jpg"],
+  "settings": { "resolution": "720p", "duration": 4, "aspect_ratio": "16:9", "generate_audio": true },
+  "maxCredits": 2000
+}'</code></pre>
+  </section>
+
+  <section>
+    <h2>6. 查询状态 & 视频链接</h2>
+    <pre><code>curl "$BASE/v1/videos/&lt;jobId&gt;" -H "x-api-key: $KEY"</code></pre>
+    <table>
+      <tr><th>status</th><th>含义</th></tr>
+      <tr><td><code>processing</code></td><td>生成中，继续轮询</td></tr>
+      <tr><td><code>done</code></td><td>完成，字段 <code>videoUrl</code> 为可直接下载/播放的链接</td></tr>
+      <tr><td><code>failed</code></td><td>失败，已自动退还积分，见 <code>error</code></td></tr>
+    </table>
+    <div class="warn">⚠️ <b>videoUrl 是已签名的 CloudFront 链接</b>（带 <code>Expires</code>、<code>Key-Pair-Id</code>、<code>Signature</code>），任何地方都能打开、有效期约 10 年。<b>请完整保存整个链接（含 <code>?</code> 后所有参数）</b>；若截断丢失 <code>Key-Pair-Id</code>，会报 <code>MissingKey</code> 无法访问。</div>
+  </section>
+
+  <section>
+    <h2>7. 积分与计费</h2>
+    <ul>
+      <li>价格由<b>模型 + 参数</b>决定（如 1080p 比 720p 贵、时长越长越贵），由服务端实时报价。</li>
+      <li>提交任务时按报价<b>扣除积分</b>；若生成失败会<b>自动退还</b>。</li>
+      <li>随时查询余额：<code>GET /v1/me</code>。积分不足返回 <code>402</code>。</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>8. 错误码</h2>
+    <table>
+      <tr><th>HTTP</th><th>code</th><th>说明</th></tr>
+      <tr><td>400</td><td>—</td><td>参数错误（缺 prompt、参数非法）</td></tr>
+      <tr><td>400</td><td>MEDIA_ERROR</td><td>媒体链接无法下载/格式不支持/非公网地址</td></tr>
+      <tr><td>400</td><td>PRICE_MISMATCH</td><td>expectedCredits 与真实价不符</td></tr>
+      <tr><td>401</td><td>—</td><td>缺失或无效的 x-api-key</td></tr>
+      <tr><td>402</td><td>INSUFFICIENT_CREDITS</td><td>积分不足</td></tr>
+      <tr><td>403</td><td>—</td><td>账号被暂停</td></tr>
+      <tr><td>429</td><td>RATE_LIMITED</td><td>超过限流（每分钟/每天/并发）</td></tr>
+      <tr><td>503</td><td>SESSION_EXPIRED</td><td>上游临时不可用，请稍后重试</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>9. 限流</h2>
+    <p>每个密钥有<b>每分钟 / 每天</b>请求上限，以及<b>并发任务</b>上限（超出返回 <code>429</code>）。请勿多方共用同一密钥——系统会检测异常使用。当前额度可在 <code>GET /v1/me</code> 查看。</p>
+  </section>
+
+  <section>
+    <h2>10. 代码示例</h2>
+    <h3>JavaScript (fetch)</h3>
+    <pre><code>const BASE = "https://artlist-api.vercel.app", KEY = "&lt;你的 API_KEY&gt;";
+const h = { "x-api-key": KEY, "content-type": "application/json" };
+
+const { jobId } = await (await fetch(`${BASE}/v1/videos`, {
+  method: "POST", headers: h,
+  body: JSON.stringify({ modelGroupId: 358, prompt: "a red panda skateboarding", maxCredits: 2000 }),
+})).json();
+
+let job;
+do {
+  await new Promise(r => setTimeout(r, 4000));
+  job = await (await fetch(`${BASE}/v1/videos/${jobId}`, { headers: h })).json();
+} while (job.status === "processing");
+console.log(job.videoUrl);</code></pre>
+
+    <h3>Python (requests)</h3>
+    <pre><code>import time, requests
+BASE, KEY = "https://artlist-api.vercel.app", "&lt;你的 API_KEY&gt;"
+h = {"x-api-key": KEY}
+
+job = requests.post(f"{BASE}/v1/videos", headers=h, json={
+    "modelGroupId": 358, "prompt": "a red panda skateboarding", "maxCredits": 2000
+}).json()
+
+jid = job["jobId"]
+while True:
+    time.sleep(4)
+    job = requests.get(f"{BASE}/v1/videos/{jid}", headers=h).json()
+    if job["status"] != "processing":
+        break
+print(job.get("videoUrl") or job.get("error"))</code></pre>
+  </section>
+
+  <p class="mut" style="text-align:center;padding:10px">如需调整额度、限流或更换密钥，请联系服务提供方。</p>
+</main>
+</body>
+</html>
