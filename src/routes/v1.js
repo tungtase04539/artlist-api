@@ -10,8 +10,12 @@ const createSchema = z
     modelGroupId: z.number().int().positive().default(358),
     prompt: z.string().min(1).optional(),
     settings: z.record(z.any()).optional(),
-    chatSessionId: z.string().min(1).optional(), // bỏ trống => dùng session mặc định admin gán cho client
-    image: z.string().url().optional(),
+    chatSessionId: z.string().min(1).optional(), // bỏ trống => tự tạo / dùng session mặc định của client
+    image: z.string().url().optional(), // 1 ảnh (image_url)
+    images: z.array(z.string().url()).max(9).optional(), // nhiều ảnh (image_urls, tối đa 9)
+    videos: z.array(z.string().url()).optional(), // video đầu vào (video_urls)
+    audios: z.array(z.string().url()).optional(), // audio đầu vào (audio_urls)
+    endFrame: z.string().url().optional(), // khung cuối (end_frame)
     feature: z.string().optional(),
     duration: z.number().int().positive().optional(),
     resolution: z.string().optional(),

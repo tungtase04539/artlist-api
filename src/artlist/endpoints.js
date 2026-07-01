@@ -93,7 +93,7 @@ export function submitRequest(params) {
         inputs: buildInputs(params),
         // ⚠️ create nhận MODEL ID (đã resolve từ quote) ở field tên "modelGroupId".
         modelGroupId: params.resolvedModelId ?? params.modelId ?? 2524,
-        feature: params.feature ?? (params.image ? 'image-to-video' : 'text-to-video'),
+        feature: params.modelFeature ?? params.feature ?? (params.image || params.images ? 'image-to-video' : 'text-to-video'),
         price: params.price, // từ QUOTE
         settings: buildSettings(params),
         artifacts: params.artifacts ?? [],

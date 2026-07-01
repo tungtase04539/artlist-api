@@ -89,7 +89,11 @@ curl localhost:3000/v1/videos/<jobId> -H "x-api-key: $K"
 - Giá **thật** tính theo `modelGroupId + settings` (server artlist resolve model + báo giá). `resolution:1080p` → model & giá khác `720p`.
 - `maxCredits`: trần giá (từ chối nếu quote vượt). `expectedCredits`: giá bạn dự tính (lệch → từ chối, chống nhầm/cheat).
 - `chatSessionId`: **tuỳ chọn** — nếu bỏ trống, API **tự tạo session** (chatSession.createChatSession) và lưu làm mặc định cho client (các job sau tái dùng). Admin cũng có thể gán sẵn qua `POST /admin/clients/:id/session`.
-- **Image-to-video**: gửi `image` = URL ảnh (png/jpg/webp, ≤ `MAX_IMAGE_MB`). API tải ảnh → upload lên artlist (presigned S3) → set `image_url` + `feature=image-to-video` tự động.
+- **Đa media đầu vào** (Seedance 2.0 hỗ trợ): gửi URL, API tự tải + upload lên artlist (presigned S3):
+  - `image` (1 ảnh → `image_url`) · `images[]` (**tối đa 9 ảnh** → `image_urls`, thành **multi-to-video**)
+  - `videos[]` (→ `video_urls`) · `audios[]` (→ `audio_urls`) · `endFrame` (→ `end_frame`)
+  - `settings.generate_audio` = tạo audio đầu ra. Model + `feature` do server tự resolve theo input.
+  - Định dạng: ảnh png/jpg/webp, video mp4/mov/webm, audio mp3/wav/m4a/aac; trần `MAX_IMAGE_MB`/`MAX_VIDEO_MB`/`MAX_AUDIO_MB`.
 - **Chống cheat**: gửi `expectedCredits` lệch giá thật → **tự khoá client** (`ABUSE_AUTO_SUSPEND`). Concurrency tối đa `MAX_CONCURRENT_PER_CLIENT` job/client.
 - **Session health**: Cron `/cron/sweep` + `POST /admin/session/check` tự phát hiện cookie hết hạn → cảnh báo `session_expired`.
 

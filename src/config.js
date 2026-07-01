@@ -41,7 +41,10 @@ const schema = z.object({
   ABUSE_MULTI_IP: z.coerce.number().int().positive().default(4), // số IP/key trong 1h -> nghi rò key
   ABUSE_AUTO_SUSPEND: z.string().optional().transform((v) => v !== 'false').pipe(z.boolean()), // tự khoá khi cheat giá
   MAX_CONCURRENT_PER_CLIENT: z.coerce.number().int().positive().default(3), // job đang chạy tối đa/client
-  MAX_IMAGE_MB: z.coerce.number().positive().default(10), // trần dung lượng ảnh upload (image-to-video)
+  MAX_IMAGE_MB: z.coerce.number().positive().default(10), // trần dung lượng ảnh upload
+  MAX_VIDEO_MB: z.coerce.number().positive().default(100), // trần video đầu vào
+  MAX_AUDIO_MB: z.coerce.number().positive().default(30), // trần audio đầu vào
+  MAX_IMAGES: z.coerce.number().int().positive().default(9), // số ảnh tối đa (image_urls)
 });
 
 const parsed = schema.safeParse(process.env);

@@ -26,6 +26,28 @@ async function ensureClientSession(client, provided) {
   return id;
 }
 
+const asArr = (x) => (Array.isArray(x) ? x : x ? [x] : []);
+
+/** Upload các media đầu vào (đa ảnh/video/audio/end_frame) → gộp vào settings với đúng field name. */
+async function resolveMedia(params) {
+  const s = { ...(params.settings || {}) };
+  try {
+    const images = asArr(params.images);
+    if (images.length > config.MAX_IMAGES) throw new Error(`Tối đa ${config.MAX_IMAGES} ảnh (image_urls)`);
+    if (images.length) s.image_urls = await Promise.all(images.map((u) => upload.uploadMedia(u, 'image')));
+    if (params.image) s.image_url = await upload.uploadMedia(params.image, 'image');
+    if (params.endFrame) s.end_frame = await upload.uploadMedia(params.endFrame, 'image');
+    const videos = asArr(params.videos);
+    if (videos.length) s.video_urls = await Promise.all(videos.map((u) => upload.uploadMedia(u, 'video')));
+    const audios = asArr(params.audios);
+    if (audios.length) s.audio_urls = await Promise.all(audios.map((u) => upload.uploadMedia(u, 'audio')));
+  } catch (e) {
+    e.mediaError = true;
+    throw e;
+  }
+  return s;
+}
+
 /**
  * Tạo video cho client (không poll nền). Hỗ trợ text-to-video & image-to-video (upload ảnh).
  * chatSessionId tự tạo nếu chưa có. Trừ credits theo giá quote thật; hoàn nếu lỗi.
@@ -40,18 +62,14 @@ export async function createVideo(client, params, ip) {
   const rl = await monitor.allowCreate(client);
   if (!rl.allowed) throw err('RATE_LIMITED', rl.message);
 
-  // Session (tự tạo nếu cần) + image-to-video (upload ảnh).
+  // Session (tự tạo nếu cần) + upload media (đa ảnh/video/audio → settings).
   let chatSessionId, genParams;
   try {
     chatSessionId = await ensureClientSession(client, params.chatSessionId);
-    genParams = params;
-    if (params.image) {
-      const fileUrl = await upload.uploadImageFromUrl(params.image);
-      genParams = { ...params, settings: { ...(params.settings || {}), image_url: fileUrl }, feature: params.feature || 'image-to-video' };
-    }
+    genParams = { ...params, settings: await resolveMedia(params) };
   } catch (e) {
     if (isAuthErr(e)) { await monitor.noteSessionExpired(`HTTP ${e.status}`); throw err('SESSION_EXPIRED', 'Dịch vụ tạm gián đoạn (session nguồn hết hạn).'); }
-    if (String(e.message || '').includes('ảnh')) throw err('IMAGE_ERROR', e.message);
+    if (e.mediaError) throw err('MEDIA_ERROR', e.message);
     throw e;
   }
 
