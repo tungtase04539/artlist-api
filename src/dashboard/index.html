@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Artlist API — Admin</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; background: #0f1420; color: #e6e9ef; }
+  header { background: #161d2d; padding: 12px 18px; display: flex; gap: 10px; align-items: center; }
+  h1 { font-size: 16px; margin: 0; }
+  main { padding: 16px; max-width: 1100px; margin: auto; }
+  section { background: #161d2d; border: 1px solid #24304a; border-radius: 8px; padding: 14px; margin-bottom: 16px; }
+  h2 { font-size: 14px; margin: 0 0 10px; color: #8fb0ff; }
+  input, textarea, button, select { font: inherit; background: #0f1420; color: #e6e9ef; border: 1px solid #2a3654; border-radius: 6px; padding: 7px 9px; }
+  button { background: #2b64ff; border: 0; cursor: pointer; }
+  button.ghost { background: #24304a; }
+  button.warn { background: #b23; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #24304a; vertical-align: top; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .muted { color: #8a93a6; font-size: 12px; }
+  .pill { padding: 2px 7px; border-radius: 20px; font-size: 11px; }
+  .ok { background: #14361f; color: #7ee2a1; } .bad { background: #3a1720; color: #f0889b; }
+  code { background:#0b0f18; padding:1px 5px; border-radius:4px; }
+  .grid { display:grid; grid-template-columns: repeat(auto-fit,minmax(140px,1fr)); gap:10px; }
+  .stat { background:#0f1420; border:1px solid #24304a; border-radius:8px; padding:10px; }
+  .stat b { font-size: 20px; display:block; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎬 Artlist Video API — Admin</h1>
+  <input id="token" type="password" placeholder="ADMIN_TOKEN" style="margin-left:auto;width:260px" />
+  <button onclick="saveToken()">Lưu token</button>
+</header>
+<main>
+  <section>
+    <h2>Tổng quan</h2>
+    <div id="stats" class="grid"></div>
+    <div class="muted" id="statusLine" style="margin-top:8px"></div>
+  </section>
+
+  <section>
+    <h2>Session artlist (cập nhật cookie khi hết hạn)</h2>
+    <div class="row">
+      <textarea id="cookie" placeholder="Dán chuỗi cookie đầy đủ (name=value; ...)" style="flex:1;min-height:60px"></textarea>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <input id="ua" placeholder="User-Agent (khớp trình duyệt tạo cf_clearance)" style="flex:1" />
+      <button onclick="updateSession()">Cập nhật session</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Tạo client</h2>
+    <div class="row">
+      <input id="c_name" placeholder="Tên client" />
+      <input id="c_credits" type="number" placeholder="Credits khởi tạo" value="0" style="width:150px" />
+      <input id="c_rmin" type="number" placeholder="rate/phút" style="width:110px" />
+      <input id="c_rday" type="number" placeholder="rate/ngày" style="width:110px" />
+      <button onclick="createClient()">Tạo</button>
+    </div>
+    <div id="newkey" class="muted" style="margin-top:8px"></div>
+  </section>
+
+  <section>
+    <h2>Clients</h2>
+    <table id="clients"><thead><tr><th>Tên</th><th>Credits</th><th>Rate</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody></tbody></table>
+  </section>
+
+  <section>
+    <h2>Cảnh báo lạm dụng <span id="alertCount" class="pill bad"></span></h2>
+    <table id="alerts"><thead><tr><th>Lúc</th><th>Mức</th><th>Loại</th><th>Nội dung</th><th></th></tr></thead><tbody></tbody></table>
+  </section>
+
+  <section>
+    <h2>Usage gần đây</h2>
+    <table id="usage"><thead><tr><th>Lúc</th><th>Loại</th><th>Path</th><th>HTTP</th><th>IP</th></tr></thead><tbody></tbody></table>
+  </section>
+</main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+let TOKEN = localStorage.getItem('adminToken') || '';
+$('#token').value = TOKEN;
+function saveToken() { TOKEN = $('#token').value.trim(); localStorage.setItem('adminToken', TOKEN); refresh(); }
+async function api(path, opts = {}) {
+  const r = await fetch(path, { ...opts, headers: { 'content-type': 'application/json', 'x-admin-token': TOKEN, ...(opts.headers || {}) } });
+  if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || r.status); }
+  return r.json();
+}
+const fmt = (t) => t ? new Date(t).toLocaleString() : '-';
+
+async function refresh() {
+  if (!TOKEN) { $('#statusLine').textContent = 'Nhập ADMIN_TOKEN để bắt đầu.'; return; }
+  try {
+    const s = await api('/admin/stats');
+    $('#stats').innerHTML = [
+      ['Clients', s.clients], ['Active', s.activeClients], ['Credits tồn', s.creditsOutstanding],
+      ['Job đang chạy', s.jobsProcessing], ['Cảnh báo chưa xử lý', s.unresolvedAlerts],
+    ].map(([k, v]) => `<div class="stat"><b>${v}</b><span class="muted">${k}</span></div>`).join('');
+    const ss = s.session;
+    $('#statusLine').innerHTML = `Session nguồn: ${ss.ready && ss.valid ? '<span class="pill ok">OK</span>' : '<span class="pill bad">CẦN CẬP NHẬT</span>'} `
+      + `${ss.usingRuntimeOverride ? '(override runtime)' : '(từ .env)'} — cập nhật: ${fmt(ss.updatedAt)}`;
+    await loadClients(); await loadAlerts(); await loadUsage();
+  } catch (e) { $('#statusLine').textContent = 'Lỗi: ' + e.message; }
+}
+async function loadClients() {
+  const { clients } = await api('/admin/clients');
+  $('#clients tbody').innerHTML = clients.map((c) => `<tr>
+    <td>${c.name}<div class="muted">${c.id}</div></td>
+    <td>${c.credits}</td>
+    <td class="muted">${c.rate_per_min}/ph · ${c.rate_per_day}/ng</td>
+    <td><span class="pill ${c.status === 'active' ? 'ok' : 'bad'}">${c.status}</span></td>
+    <td class="row">
+      <button class="ghost" onclick="topup('${c.id}')">+Credits</button>
+      <button class="ghost" onclick="newKey('${c.id}')">+Key</button>
+      <button class="${c.status === 'active' ? 'warn' : 'ghost'}" onclick="toggle('${c.id}','${c.status === 'active' ? 'suspended' : 'active'}')">${c.status === 'active' ? 'Khoá' : 'Mở'}</button>
+    </td></tr>`).join('');
+}
+async function loadAlerts() {
+  const { alerts } = await api('/admin/alerts?limit=50');
+  $('#alertCount').textContent = alerts.filter(a => !a.resolved).length || '';
+  $('#alerts tbody').innerHTML = alerts.map((a) => `<tr>
+    <td class="muted">${fmt(a.created_at)}</td>
+    <td><span class="pill ${a.severity === 'critical' ? 'bad' : ''}">${a.severity}</span></td>
+    <td>${a.kind}</td><td>${a.message}</td>
+    <td>${a.resolved ? '✓' : `<button class="ghost" onclick="resolveAlert(${a.id})">Xử lý</button>`}</td></tr>`).join('');
+}
+async function loadUsage() {
+  const { events } = await api('/admin/usage?limit=40');
+  $('#usage tbody').innerHTML = events.map((e) => `<tr>
+    <td class="muted">${fmt(e.created_at)}</td><td>${e.type}</td><td class="muted">${e.path || ''}</td>
+    <td>${e.status_code || ''}</td><td class="muted">${e.ip || ''}</td></tr>`).join('');
+}
+async function createClient() {
+  const body = { name: $('#c_name').value, credits: +$('#c_credits').value || 0 };
+  if ($('#c_rmin').value) body.ratePerMin = +$('#c_rmin').value;
+  if ($('#c_rday').value) body.ratePerDay = +$('#c_rday').value;
+  const r = await api('/admin/clients', { method: 'POST', body: JSON.stringify(body) });
+  $('#newkey').innerHTML = `Đã tạo <b>${r.client.name}</b>. API key (lưu ngay): <code>${r.apiKey}</code>`;
+  refresh();
+}
+async function topup(id) { const a = +prompt('Cộng/trừ credits (số âm để trừ):', '10000'); if (!a) return; await api(`/admin/clients/${id}/credits`, { method: 'POST', body: JSON.stringify({ amount: a }) }); refresh(); }
+async function newKey(id) { const r = await api(`/admin/clients/${id}/keys`, { method: 'POST' }); alert('API key mới (lưu ngay):\n' + r.apiKey); }
+async function toggle(id, status) { await api(`/admin/clients/${id}/status`, { method: 'POST', body: JSON.stringify({ status }) }); refresh(); }
+async function resolveAlert(id) { await api(`/admin/alerts/${id}/resolve`, { method: 'POST' }); loadAlerts(); }
+async function updateSession() {
+  const cookie = $('#cookie').value.trim(); if (!cookie) return alert('Dán cookie');
+  const body = { cookie }; if ($('#ua').value.trim()) body.userAgent = $('#ua').value.trim();
+  await api('/admin/session', { method: 'POST', body: JSON.stringify(body) });
+  $('#cookie').value = ''; alert('Đã cập nhật session'); refresh();
+}
+refresh();
+setInterval(() => { if (TOKEN) refresh(); }, 20000);
+</script>
+</body>
+</html>

@@ -2,23 +2,40 @@ import 'dotenv/config';
 import { z } from 'zod';
 
 /**
- * Đọc & validate biến môi trường. Fail-fast nếu thiếu cấu hình bắt buộc để chạy server.
- * Các giá trị phía artlist (BASE_URL, COOKIE...) là optional ở mức boot vì có thể
- * điền sau khi bắt request (Phase 1); client sẽ báo lỗi rõ ràng nếu thiếu khi gọi.
+ * Đọc & validate biến môi trường. Fail-fast nếu thiếu cấu hình bắt buộc.
  */
 const schema = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
-  API_KEY: z.string().min(1, 'API_KEY là bắt buộc — sinh bằng: openssl rand -hex 32'),
 
+  // Admin: token bảo vệ toàn bộ /admin/* và dashboard.
+  ADMIN_TOKEN: z.string().min(16, 'ADMIN_TOKEN cần >= 16 ký tự (openssl rand -hex 32)'),
+
+  // SQLite file (clients, keys, credits, jobs, usage, alerts).
+  DB_PATH: z.string().default('data/artlist-api.db'),
+
+  // Nguyên liệu artlist (admin cung cấp). Điền sau khi bắt request.
   ARTLIST_BASE_URL: z.string().url().optional(),
   ARTLIST_COOKIE: z.string().optional(),
+  ARTLIST_USER_AGENT: z.string().optional(),
   ARTLIST_AUTH_TOKEN: z.string().optional(),
   ARTLIST_CSRF_TOKEN: z.string().optional(),
-  ARTLIST_USER_AGENT: z.string().optional(),
 
+  // Poll & concurrency (outbound tới artlist).
   POLL_INTERVAL_MS: z.coerce.number().int().positive().default(4000),
   POLL_TIMEOUT_MS: z.coerce.number().int().positive().default(600000),
-  MAX_CONCURRENT_JOBS: z.coerce.number().int().positive().default(2),
+  MAX_CONCURRENT_JOBS: z.coerce.number().int().positive().default(4),
+
+  // Rate limit mặc định cho client mới (admin chỉnh riêng từng client được).
+  DEFAULT_RATE_PER_MIN: z.coerce.number().int().positive().default(6),
+  DEFAULT_RATE_PER_DAY: z.coerce.number().int().positive().default(200),
+
+  // Cache catalog model (ms).
+  CATALOG_TTL_MS: z.coerce.number().int().positive().default(300000),
+
+  // Ngưỡng phát hiện lạm dụng.
+  ABUSE_ERROR_RATE: z.coerce.number().min(0).max(1).default(0.5), // tỉ lệ lỗi cảnh báo
+  ABUSE_MIN_EVENTS: z.coerce.number().int().positive().default(20), // số event tối thiểu để xét
+  ABUSE_MULTI_IP: z.coerce.number().int().positive().default(4), // số IP/key trong 1h -> nghi rò key
 });
 
 const parsed = schema.safeParse(process.env);
@@ -28,7 +45,7 @@ if (!parsed.success) {
   for (const issue of parsed.error.issues) {
     console.error(`   - ${issue.path.join('.')}: ${issue.message}`);
   }
-  console.error('\n👉 Sao chép .env.example thành .env rồi điền giá trị.');
+  console.error('\n👉 Sao chép .env.example thành .env rồi điền giá trị (ít nhất ADMIN_TOKEN).');
   process.exit(1);
 }
 

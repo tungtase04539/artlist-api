@@ -8,6 +8,8 @@ import {
   resultRequest,
   normalizeStatus,
   normalizeQuote,
+  modelGroupsRequest,
+  uiConfigRequest,
 } from './endpoints.js';
 
 /**
@@ -42,6 +44,16 @@ async function call({ url, method, body }) {
   }
 }
 
+/** Catalog: toàn bộ danh mục/model (raw tRPC json). */
+export async function getModelGroups() {
+  return call(modelGroupsRequest());
+}
+
+/** Catalog: cấu hình UI (đủ thông số) của 1 model group (raw tRPC json). */
+export async function getUIConfig(modelGroupId) {
+  return call(uiConfigRequest(modelGroupId));
+}
+
 /**
  * (1) Lấy cost quote — BẮT BUỘC trước khi create.
  * Trả về chữ ký JWT do server ký; KHÔNG thể tự chế, phải xin cho đúng bộ inputs.
@@ -65,7 +77,16 @@ export async function getCostQuote(params) {
  */
 export async function submit(params) {
   const quote = await getCostQuote(params);
-  const raw = await call(submitRequest({ ...params, ...quote }));
+  return createGeneration({ ...params, ...quote });
+}
+
+/**
+ * (2b) Create cấp thấp — params ĐÃ gồm field quote (price, timestamp, costQuoteDigitalSignature, resolvedModelId).
+ * Dùng khi caller đã quote riêng (vd để tính tiền trước khi create).
+ * @returns {Promise<{ providerJobId: string, raw: any }>}
+ */
+export async function createGeneration(params) {
+  const raw = await call(submitRequest(params));
   const norm = normalizeStatus(raw);
   if (!norm.providerJobId) {
     logger.error({ raw }, 'Response create không có id — kiểm tra normalizeStatus()');

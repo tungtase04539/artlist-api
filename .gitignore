@@ -5,6 +5,11 @@
 session.json
 *.local
 
+# Data (SQLite)
+data/
+*.db
+*.db-*
+
 # Node
 node_modules/
 npm-debug.log*

@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 // Cấu hình tối thiểu để import config/endpoints (không gọi mạng).
-process.env.API_KEY = 'test';
+process.env.ADMIN_TOKEN = 'test-admin-token-1234567890';
 process.env.ARTLIST_BASE_URL = 'https://toolkit.artlist.io';
 
 const ep = await import('../src/artlist/endpoints.js');
@@ -76,12 +76,19 @@ test('normalizeQuote: map cost/digitalSignature/timestamp (envelope {success,dat
   assert.equal(q.timestamp, 1782887821107);
 });
 
-test('quoteRequest: đúng endpoint & input shape (modelGroupId 358 + input.modelId 2524)', () => {
-  const r = ep.quoteRequest({ prompt: 'p', duration: 4, resolution: '720p', aspectRatio: '16:9', generateAudio: true, modelId: 2524, modelGroupId: 358 });
+test('quoteRequest: đúng endpoint & input shape (modelGroupId 358, server tự resolve modelId)', () => {
+  const r = ep.quoteRequest({ prompt: 'p', duration: 4, resolution: '720p', aspectRatio: '16:9', generateAudio: true, modelGroupId: 358 });
   assert.equal(r.method, 'GET');
   assert.ok(r.url.includes('/api/trpc/modelRouter.getCostQuote?input='));
   const input = JSON.parse(decodeURIComponent(r.url.split('input=')[1]));
-  assert.deepEqual(input, { json: { modelGroupId: 358, input: { modelId: 2524, prompt: 'p', resolution: '720p', duration: 4, generate_audio: true, aspect_ratio: '16:9' } } });
+  assert.deepEqual(input, { json: { modelGroupId: 358, input: { prompt: 'p', resolution: '720p', duration: 4, generate_audio: true, aspect_ratio: '16:9' } } });
+});
+
+test('normalizeQuote: lấy được resolvedModelId từ response', () => {
+  const raw = { result: { data: { json: { success: true, data: { modelId: 2525, cost: 2400, digitalSignature: 'sig', timestamp: 1 } } } } };
+  const q = ep.normalizeQuote(raw);
+  assert.equal(q.resolvedModelId, 2525);
+  assert.equal(q.price, 2400);
 });
 
 test('submitRequest: body khớp cấu trúc request THẬT', () => {
