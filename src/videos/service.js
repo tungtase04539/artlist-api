@@ -144,7 +144,7 @@ export async function createVideo(client, params, ip) {
 
   try {
     const { providerJobId } = await artlist.createGeneration({ ...genParams, ...quote, chatSessionId, modelGroupId: groupId });
-    logEvent({ level: 'info', category: 'job', event: 'created', clientId: client.id, jobId, meta: { modelGroupId: groupId, price, media: media.artifacts.length } }).catch(() => {});
+    logEvent({ level: 'info', category: 'job', event: 'created', clientId: client.id, jobId, meta: { modelGroupId: groupId, price, media: genParams.artifacts?.length ?? 0 } }).catch(() => {});
     return await Jobs.update(jobId, { provider_job_id: providerJobId, status: 'processing' });
   } catch (e) {
     await Credits.change(client.id, price, 'refund', jobId);
