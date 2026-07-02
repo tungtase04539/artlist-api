@@ -2,37 +2,53 @@ import { Settings } from '../db/repos.js';
 import { config } from '../config.js';
 
 /**
- * Chống brute-force đăng nhập admin. Đếm số lần sai theo IP, lưu ở app_settings (DB) nên
- * hiệu lực xuyên mọi instance serverless. Sai >= LOGIN_MAX_FAILS trong LOGIN_WINDOW_MIN phút
- * → khoá IP LOGIN_LOCK_MIN phút.
+ * Chống brute-force đăng nhập admin — 2 lớp (lưu app_settings/DB → xuyên mọi instance):
+ *  1) Per-IP: sai >= LOGIN_MAX_FAILS trong cửa sổ → khoá IP đó.
+ *  2) TOÀN CỤC: tổng sai (mọi IP) >= LOGIN_MAX_FAILS_GLOBAL → khoá mọi đăng nhập.
+ * Lớp toàn cục bắt được kẻ tấn công XOAY IP (per-IP không chặn nổi). Admin vẫn có thể
+ * dùng ADMIN_TOKEN thô (bỏ qua login) hoặc POST /admin/login/unlock để mở khoá ngay.
  */
-const KEY = (ip) => `login_guard:${ip || 'unknown'}`;
+const IPKEY = (ip) => `login_guard:ip:${ip || 'unknown'}`;
+const GKEY = 'login_guard:global';
 
-async function read(ip) {
-  try { return JSON.parse((await Settings.get(KEY(ip))) || '{}'); } catch { return {}; }
-}
+async function read(k) { try { return JSON.parse((await Settings.get(k)) || '{}'); } catch { return {}; } }
 
-/** Trạng thái khoá hiện tại của IP. */
-export async function loginStatus(ip) {
-  const s = await read(ip);
-  const now = Date.now();
-  if (s.lockedUntil && s.lockedUntil > now) return { locked: true, retryAfterSec: Math.ceil((s.lockedUntil - now) / 1000), fails: s.fails || 0 };
-  return { locked: false, fails: s.fails || 0 };
-}
-
-/** Ghi 1 lần đăng nhập SAI → tăng đếm, khoá nếu vượt ngưỡng. Trả state mới. */
-export async function recordFail(ip) {
-  const now = Date.now();
-  const windowMs = config.LOGIN_WINDOW_MIN * 60_000;
-  let s = await read(ip);
+function bump(s, now, windowMs, maxFails, lockMs) {
   if (!s.windowStart || now - s.windowStart > windowMs) s = { fails: 0, windowStart: now, lockedUntil: 0 };
   s.fails = (s.fails || 0) + 1;
-  if (s.fails >= config.LOGIN_MAX_FAILS) s.lockedUntil = now + config.LOGIN_LOCK_MIN * 60_000;
-  await Settings.set(KEY(ip), JSON.stringify(s));
+  if (s.fails >= maxFails) s.lockedUntil = now + lockMs;
   return s;
 }
 
-/** Đăng nhập ĐÚNG → xoá đếm cho IP. */
+/** Có đang bị khoá không (IP hoặc toàn cục)? */
+export async function loginStatus(ip) {
+  const now = Date.now();
+  for (const [k, scope] of [[IPKEY(ip), 'ip'], [GKEY, 'global']]) {
+    const s = await read(k);
+    if (s.lockedUntil && s.lockedUntil > now) return { locked: true, retryAfterSec: Math.ceil((s.lockedUntil - now) / 1000), scope };
+  }
+  return { locked: false };
+}
+
+/** Ghi 1 lần SAI → tăng cả đếm IP lẫn toàn cục, khoá nếu vượt ngưỡng. */
+export async function recordFail(ip) {
+  const now = Date.now();
+  const windowMs = config.LOGIN_WINDOW_MIN * 60_000;
+  const lockMs = config.LOGIN_LOCK_MIN * 60_000;
+  const ipS = bump(await read(IPKEY(ip)), now, windowMs, config.LOGIN_MAX_FAILS, lockMs);
+  await Settings.set(IPKEY(ip), JSON.stringify(ipS));
+  const gS = bump(await read(GKEY), now, windowMs, config.LOGIN_MAX_FAILS_GLOBAL, lockMs);
+  await Settings.set(GKEY, JSON.stringify(gS));
+  return { ipFails: ipS.fails, ipLocked: !!ipS.lockedUntil, globalFails: gS.fails, globalLocked: !!gS.lockedUntil, locked: !!(ipS.lockedUntil || gS.lockedUntil) };
+}
+
+/** Đăng nhập ĐÚNG → xoá khoá IP + reset toàn cục. */
 export async function recordSuccess(ip) {
-  try { await Settings.set(KEY(ip), JSON.stringify({ fails: 0, windowStart: Date.now(), lockedUntil: 0 })); } catch { /* noop */ }
+  const clean = JSON.stringify({ fails: 0, windowStart: Date.now(), lockedUntil: 0 });
+  try { await Settings.set(IPKEY(ip), clean); await Settings.set(GKEY, clean); } catch { /* noop */ }
+}
+
+/** Mở khoá toàn bộ (admin gọi khi bị khoá nhầm). */
+export async function clearAll() {
+  try { return await Settings.deleteKeysLike('login_guard:'); } catch { return 0; }
 }

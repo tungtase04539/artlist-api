@@ -7,7 +7,7 @@ import { sweepStaleJobs, checkSessionHealth } from '../videos/service.js';
 import { pushAlert } from '../lib/notify.js';
 import * as catalog from '../artlist/catalog.js';
 import { signSession, safeEqualStr } from '../lib/token.js';
-import { loginStatus, recordFail, recordSuccess } from '../auth/loginGuard.js';
+import { loginStatus, recordFail, recordSuccess, clearAll } from '../auth/loginGuard.js';
 import { realIp } from '../lib/ip.js';
 import { logEvent } from '../lib/events.js';
 
@@ -42,14 +42,21 @@ export default async function adminRoutes(app) {
     const ok = safeEqualStr(s.data.username, config.ADMIN_USERNAME) & safeEqualStr(s.data.password, config.ADMIN_PASSWORD);
     if (!ok) {
       const st = await recordFail(ip);
-      logEvent({ level: 'warn', category: 'abuse', event: 'login_fail', ip, meta: { fails: st.fails, locked: !!st.lockedUntil } }).catch(() => {});
-      if (st.lockedUntil) pushAlert({ severity: 'critical', kind: 'login_bruteforce', message: `IP ${ip} bị khoá đăng nhập admin (sai ${st.fails} lần)`, meta: { ip } }).catch(() => {});
-      const remaining = Math.max(0, config.LOGIN_MAX_FAILS - st.fails);
-      return reply.code(401).send({ error: `Sai tài khoản hoặc mật khẩu.${remaining > 0 ? ` Còn ${remaining} lần trước khi bị khoá.` : ''}` });
+      logEvent({ level: 'warn', category: 'abuse', event: 'login_fail', ip, meta: { ipFails: st.ipFails, globalFails: st.globalFails, locked: st.locked } }).catch(() => {});
+      if (st.locked) {
+        pushAlert({ severity: 'critical', kind: 'login_bruteforce', message: `Khoá đăng nhập admin (IP ${ip}, tổng sai ${st.globalFails})`, meta: { ip, globalFails: st.globalFails } }).catch(() => {});
+        reply.header('retry-after', config.LOGIN_LOCK_MIN * 60);
+        return reply.code(429).send({ error: `Sai quá nhiều lần — tạm khoá ${config.LOGIN_LOCK_MIN} phút.` });
+      }
+      const remaining = Math.max(0, config.LOGIN_MAX_FAILS - st.ipFails);
+      return reply.code(401).send({ error: `Sai tài khoản hoặc mật khẩu.${remaining > 0 ? ` Còn ${remaining} lần từ IP này.` : ''}` });
     }
     await recordSuccess(ip);
     return { token: signSession({ u: s.data.username }, config.ADMIN_TOKEN, SESSION_TTL_MS), expiresInSec: SESSION_TTL_MS / 1000 };
   });
+
+  // Mở khoá đăng nhập (khi bị brute-force lock nhầm) — cần ADMIN_TOKEN/session.
+  app.post('/admin/login/unlock', async () => ({ cleared: await clearAll() }));
 
   // ── Clients ──
   app.post('/admin/clients', async (req, reply) => {

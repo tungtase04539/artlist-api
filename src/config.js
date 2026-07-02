@@ -13,7 +13,8 @@ const schema = z.object({
   ADMIN_USERNAME: z.string().optional(),
   ADMIN_PASSWORD: z.string().optional(),
   // Chống brute-force đăng nhập: khoá IP sau N lần sai trong cửa sổ, khoá trong X phút.
-  LOGIN_MAX_FAILS: z.coerce.number().int().positive().default(5),
+  LOGIN_MAX_FAILS: z.coerce.number().int().positive().default(5), // ngưỡng khoá theo IP
+  LOGIN_MAX_FAILS_GLOBAL: z.coerce.number().int().positive().default(20), // ngưỡng khoá toàn cục (chống xoay IP)
   LOGIN_WINDOW_MIN: z.coerce.number().int().positive().default(15),
   LOGIN_LOCK_MIN: z.coerce.number().int().positive().default(15),
 
