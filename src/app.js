@@ -9,7 +9,7 @@ import docsRoutes from './routes/docs.js';
 import systemRoutes from './routes/system.js';
 
 // Không log HTTP cho các path tĩnh/ồn (health, docs, dashboard...) — tránh nhiễu.
-const SKIP_HTTP_LOG = new Set(['/health', '/openapi.json', '/docs', '/dashboard', '/guide', '/app', '/favicon.ico']);
+const SKIP_HTTP_LOG = new Set(['/health', '/openapi.json', '/docs', '/dashboard', '/guide', '/app', '/pricing', '/favicon.ico']);
 
 /** Dựng Fastify app (dùng chung cho standalone `src/index.js` và serverless `api/index.js`). */
 export async function buildApp() {

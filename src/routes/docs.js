@@ -111,4 +111,9 @@ export default async function docsRoutes(app) {
   app.get('/app', async (req, reply) => {
     reply.type('text/html').send(readFileSync(join(__dir, '../dashboard/client.html'), 'utf8'));
   });
+
+  // 价格表 (中文) — bảng giá Seedance 2.0 cho khách.
+  app.get('/pricing', async (req, reply) => {
+    reply.type('text/html').send(readFileSync(join(__dir, '../dashboard/pricing-zh.html'), 'utf8'));
+  });
 }

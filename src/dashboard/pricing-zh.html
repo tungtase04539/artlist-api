@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Seedance 2.0 视频生成 · 价格表</title>
+<style>
+  :root { --bg:#0f1420; --card:#161d2d; --line:#24304a; --fg:#e6e9ef; --mut:#8a93a6; --acc:#8fb0ff; --code:#0b0f18; --grn:#7ee2a1; }
+  * { box-sizing:border-box; }
+  body { font-family:system-ui,"PingFang SC","Microsoft YaHei",sans-serif; margin:0; background:var(--bg); color:var(--fg); line-height:1.7; }
+  header { background:var(--card); border-bottom:1px solid var(--line); padding:20px 24px; }
+  header h1 { font-size:20px; margin:0; }
+  header p { margin:6px 0 0; color:var(--mut); font-size:13px; }
+  main { max-width:920px; margin:auto; padding:22px; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:18px 20px; margin-bottom:18px; }
+  h2 { font-size:16px; color:var(--acc); margin:0 0 12px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:center; padding:7px 8px; border-bottom:1px solid var(--line); }
+  th { color:var(--acc); font-weight:600; } thead th:first-child, tbody th { text-align:left; color:var(--fg); }
+  tbody th { font-weight:600; }
+  td.anchor { color:var(--grn); font-weight:700; }
+  code { background:var(--code); padding:2px 6px; border-radius:4px; color:#ffd479; }
+  .mut { color:var(--mut); font-size:12.5px; }
+  .box { background:var(--code); border:1px solid var(--line); border-radius:8px; padding:12px 14px; }
+  select, input { font:inherit; background:var(--code); color:var(--fg); border:1px solid #2a3654; border-radius:6px; padding:8px 10px; }
+  .calc { display:flex; gap:12px; align-items:end; flex-wrap:wrap; }
+  .calc label { display:block; font-size:12px; color:var(--mut); margin-bottom:3px; }
+  .price { font-size:26px; font-weight:800; color:var(--grn); }
+  .row { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-top:8px; }
+  .stat { background:var(--code); border:1px solid var(--line); border-radius:8px; padding:10px; }
+  .stat b { display:block; font-size:18px; } a { color:var(--acc); }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎬 Seedance 2.0 视频生成 · 价格表</h1>
+  <p>按分辨率 × 时长计价 · <b>音频开关 / 画面比例不影响价格</b> · 使用文档：<a href="/guide">/guide</a> · 控制台：<a href="/app">/app</a></p>
+</header>
+<main>
+
+  <section>
+    <h2>计价规则</h2>
+    <div class="box">
+      价格 = <b>时长(秒)</b> × <b>每秒单价</b>。每秒单价随分辨率：
+      <div class="row">
+        <div class="stat"><b>480p</b>$0.0333 / 秒</div>
+        <div class="stat"><b>720p</b>$0.05 / 秒</div>
+        <div class="stat"><b>1080p</b>$0.10 / 秒</div>
+        <div class="stat"><b>4K</b>$0.20 / 秒</div>
+      </div>
+      <div class="mut" style="margin-top:8px">基准：1080p / 15 秒 = <b>$1.5</b> · 积分换算 <code>$1 = 6000 积分</code> · <code>价格 = 积分 ÷ 6000</code></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>💡 快速估价</h2>
+    <div class="calc">
+      <div><label>分辨率</label><select id="res"></select></div>
+      <div><label>时长（秒）</label><select id="dur"></select></div>
+      <div style="margin-left:auto;text-align:right">
+        <div class="price" id="usd">$0.00</div>
+        <div class="mut" id="cr">0 积分</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>💵 价格总表（美元 / 视频）</h2>
+    <div style="overflow:auto"><table id="usdTable"></table></div>
+  </section>
+
+  <section>
+    <h2>🎟️ 积分总表（供对照）</h2>
+    <div style="overflow:auto"><table id="crTable"></table></div>
+    <div class="mut" style="margin-top:8px">积分 = 时长 × { 480p:200 · 720p:300 · 1080p:600 · 4K:1200 }。生成失败自动退还积分。</div>
+  </section>
+
+  <p class="mut" style="text-align:center">如需其它模型（Veo / Kling / Sora 等）报价，请调用 <code>GET /v1/models/{名称}</code> 查看参数，或联系服务商。</p>
+</main>
+
+<script>
+const RES = [['480p',200],['720p',300],['1080p',600],['4k',1200]];
+const DUR = Array.from({length:12},(_,i)=>i+4);      // 4..15
+const CREDITS_PER_USD = 6000;                         // 基准 1080p/15s=9000积分=$1.5
+const credits = (rate,d)=> rate*d;
+const usd = (c)=> c/CREDITS_PER_USD;
+const $ = (s)=>document.querySelector(s);
+
+// 下拉
+$('#res').innerHTML = RES.map(([r])=>`<option value="${r}">${r==='4k'?'4K':r}</option>`).join('');
+$('#res').value='1080p';
+$('#dur').innerHTML = DUR.map(d=>`<option${d===15?' selected':''}>${d}</option>`).join('');
+function calc(){
+  const rate = RES.find(([r])=>r===$('#res').value)[1];
+  const d = +$('#dur').value;
+  const c = credits(rate,d);
+  $('#usd').textContent = '$'+usd(c).toFixed(3);
+  $('#cr').textContent = c.toLocaleString()+' 积分';
+}
+$('#res').onchange=calc; $('#dur').onchange=calc; calc();
+
+// 表格生成
+function buildTable(el, fmt, anchorCell){
+  const head = '<thead><tr><th>分辨率 \\ 秒</th>'+DUR.map(d=>`<th>${d}</th>`).join('')+'</tr></thead>';
+  const body = '<tbody>'+RES.map(([r,rate])=>`<tr><th>${r==='4k'?'4K':r}</th>`+DUR.map(d=>{
+    const c=credits(rate,d); const isA=(r===anchorCell[0]&&d===anchorCell[1]);
+    return `<td class="${isA?'anchor':''}">${fmt(c)}</td>`;
+  }).join('')+'</tr>').join('')+'</tbody>';
+  el.innerHTML = head+body;
+}
+buildTable($('#usdTable'), c=>'$'+usd(c).toFixed(3), ['1080p',15]);
+buildTable($('#crTable'),  c=>c.toLocaleString(),    ['1080p',15]);
+</script>
+</body>
+</html>
