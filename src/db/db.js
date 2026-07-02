@@ -57,6 +57,8 @@ async function migrate() {
     default_chat_session_id text,
     created_at bigint NOT NULL
   )`);
+  // Cờ: bỏ qua maxCredits/expectedCredits client gửi (chỉ số dư giới hạn). Cho tích hợp relay.
+  await _q(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS ignore_price_caps integer NOT NULL DEFAULT 0`);
 
   await _q(`CREATE TABLE IF NOT EXISTS api_keys (
     id text PRIMARY KEY,

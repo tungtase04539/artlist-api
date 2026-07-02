@@ -62,6 +62,14 @@ export default async function adminRoutes(app) {
     return { client: await Clients.setLimits(req.params.id, s.data.ratePerMin, s.data.ratePerDay) };
   });
 
+  // Bật/tắt bỏ qua trần giá client gửi (maxCredits/expectedCredits) — cho tích hợp relay/NewAPI.
+  app.post('/admin/clients/:id/pricing', async (req, reply) => {
+    const s = z.object({ ignoreCaps: z.boolean() }).safeParse(req.body);
+    if (!s.success) return reply.code(400).send({ error: 'Cần ignoreCaps (true|false)' });
+    if (!(await Clients.get(req.params.id))) return reply.code(404).send({ error: 'Không tìm thấy client' });
+    return { client: await Clients.setIgnorePriceCaps(req.params.id, s.data.ignoreCaps) };
+  });
+
   // Gán session artlist mặc định cho client (client khỏi phải truyền chatSessionId).
   app.post('/admin/clients/:id/session', async (req, reply) => {
     const s = z.object({ chatSessionId: z.string().min(1) }).safeParse(req.body);

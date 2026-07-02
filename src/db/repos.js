@@ -34,6 +34,10 @@ export const Clients = {
     await query('UPDATE clients SET default_chat_session_id=$1 WHERE id=$2', [sessionId, id]);
     return this.get(id);
   },
+  async setIgnorePriceCaps(id, on) {
+    await query('UPDATE clients SET ignore_price_caps=$1 WHERE id=$2', [on ? 1 : 0, id]);
+    return this.get(id);
+  },
 };
 
 // ─────────────────────────── API keys ───────────────────────────

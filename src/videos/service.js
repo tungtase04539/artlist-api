@@ -119,12 +119,16 @@ export async function createVideo(client, params, ip) {
   const price = quote.price;
   if (!price || !quote.costQuoteDigitalSignature) throw err('QUOTE_FAILED', 'Không lấy được báo giá cho tham số này.');
 
-  if (params.expectedCredits != null && Number(params.expectedCredits) !== price) {
-    await monitor.notePriceMismatch(client, { claimed: params.expectedCredits, actual: price, ip });
-    throw err('PRICE_MISMATCH', `Giá không khớp: thực tế ${price} credits.`, { price });
-  }
-  if (params.maxCredits != null && price > Number(params.maxCredits)) {
-    throw err('PRICE_TOO_HIGH', `Giá ${price} vượt maxCredits (${params.maxCredits}).`, { price });
+  // Cờ ignore_price_caps: reseller cho khách gọi thoải mái — bỏ qua maxCredits/expectedCredits
+  // client gửi (chúng vô hiệu), CHỈ số dư giới hạn. Giá THẬT vẫn trừ đúng vào số dư key.
+  if (!client.ignore_price_caps) {
+    if (params.expectedCredits != null && Number(params.expectedCredits) !== price) {
+      await monitor.notePriceMismatch(client, { claimed: params.expectedCredits, actual: price, ip });
+      throw err('PRICE_MISMATCH', `Giá không khớp: thực tế ${price} credits.`, { price });
+    }
+    if (params.maxCredits != null && price > Number(params.maxCredits)) {
+      throw err('PRICE_TOO_HIGH', `Giá ${price} vượt maxCredits (${params.maxCredits}).`, { price });
+    }
   }
 
   const balance = await Credits.balance(client.id);
