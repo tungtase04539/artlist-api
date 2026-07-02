@@ -30,8 +30,12 @@
 <body>
 <header>
   <h1>🎬 Artlist Video API — Admin</h1>
-  <input id="token" type="password" placeholder="ADMIN_TOKEN" style="margin-left:auto;width:260px" />
-  <button onclick="saveToken()">Lưu token</button>
+  <span id="loginBox" style="margin-left:auto;display:flex;gap:8px;align-items:center">
+    <input id="user" placeholder="Tài khoản" style="width:130px" />
+    <input id="pass" type="password" placeholder="Mật khẩu" style="width:150px" onkeydown="if(event.key==='Enter')login()" />
+    <button onclick="login()">Đăng nhập</button>
+  </span>
+  <button id="logoutBtn" class="ghost" style="margin-left:auto;display:none" onclick="logout()">Đăng xuất</button>
 </header>
 <main>
   <section>
@@ -94,10 +98,21 @@
 <script>
 const $ = (s) => document.querySelector(s);
 let TOKEN = localStorage.getItem('adminToken') || '';
-$('#token').value = TOKEN;
-function saveToken() { TOKEN = $('#token').value.trim(); localStorage.setItem('adminToken', TOKEN); refresh(); }
+function showAuth() { const on = !!TOKEN; $('#loginBox').style.display = on ? 'none' : 'flex'; $('#logoutBtn').style.display = on ? 'inline-block' : 'none'; }
+async function login() {
+  const username = $('#user').value.trim(), password = $('#pass').value;
+  if (!username || !password) return alert('Nhập tài khoản & mật khẩu');
+  try {
+    const res = await fetch('/admin/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username, password }) });
+    const r = await res.json().catch(() => ({}));
+    if (!res.ok || !r.token) throw new Error(r.error || 'Đăng nhập thất bại');
+    TOKEN = r.token; localStorage.setItem('adminToken', TOKEN); $('#pass').value = ''; showAuth(); refresh();
+  } catch (e) { alert(e.message); }
+}
+function logout() { TOKEN = ''; localStorage.removeItem('adminToken'); showAuth(); location.reload(); }
 async function api(path, opts = {}) {
   const r = await fetch(path, { ...opts, headers: { 'content-type': 'application/json', 'x-admin-token': TOKEN, ...(opts.headers || {}) } });
+  if (r.status === 401) { TOKEN = ''; localStorage.removeItem('adminToken'); showAuth(); throw new Error('Phiên hết hạn — đăng nhập lại'); }
   if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || r.status); }
   return r.json();
 }
@@ -186,7 +201,7 @@ async function updateSession() {
   await api('/admin/session', { method: 'POST', body: JSON.stringify(body) });
   $('#cookie').value = ''; alert('Đã cập nhật session'); refresh();
 }
-refresh();
+showAuth(); refresh();
 setInterval(() => { if (TOKEN) refresh(); }, 20000);
 </script>
 </body>

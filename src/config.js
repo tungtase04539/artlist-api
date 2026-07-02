@@ -7,8 +7,11 @@ import { z } from 'zod';
 const schema = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
 
-  // Admin: token bảo vệ toàn bộ /admin/* và dashboard.
+  // Admin: token bảo vệ toàn bộ /admin/* và dashboard (dùng cho API/cron).
   ADMIN_TOKEN: z.string().min(16, 'ADMIN_TOKEN cần >= 16 ký tự (openssl rand -hex 32)'),
+  // Đăng nhập dashboard bằng tài khoản/mật khẩu (tuỳ chọn). Đặt cả 2 để bật /admin/login.
+  ADMIN_USERNAME: z.string().optional(),
+  ADMIN_PASSWORD: z.string().optional(),
 
   // DB: Postgres/Supabase (prod). Để trống => PGlite in-process (local/test).
   DATABASE_URL: z.string().optional(),

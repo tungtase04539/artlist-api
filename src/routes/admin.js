@@ -6,6 +6,7 @@ import { Clients, ApiKeys, Credits, Jobs, Usage, Alerts, Events } from '../db/re
 import { sweepStaleJobs, checkSessionHealth } from '../videos/service.js';
 import { pushAlert } from '../lib/notify.js';
 import * as catalog from '../artlist/catalog.js';
+import { signSession, safeEqualStr } from '../lib/token.js';
 
 const clientSchema = z.object({
   name: z.string().min(1),
@@ -16,9 +17,22 @@ const clientSchema = z.object({
   defaultChatSessionId: z.string().optional(),
 });
 
-/** Admin API — bảo vệ bằng ADMIN_TOKEN. */
+/** Admin API — bảo vệ bằng ADMIN_TOKEN (hoặc session token sau khi đăng nhập). */
 export default async function adminRoutes(app) {
   app.addHook('preHandler', adminAuth);
+
+  // Đăng nhập bằng tài khoản/mật khẩu → cấp session token (12h). Miễn adminAuth (xem adminAuth.js).
+  const SESSION_TTL_MS = 12 * 3600 * 1000;
+  app.post('/admin/login', async (req, reply) => {
+    const s = z.object({ username: z.string().min(1), password: z.string().min(1) }).safeParse(req.body);
+    if (!s.success) return reply.code(400).send({ error: 'Cần username, password' });
+    if (!config.ADMIN_USERNAME || !config.ADMIN_PASSWORD) {
+      return reply.code(503).send({ error: 'Chưa bật đăng nhập (đặt ADMIN_USERNAME & ADMIN_PASSWORD).' });
+    }
+    const ok = safeEqualStr(s.data.username, config.ADMIN_USERNAME) & safeEqualStr(s.data.password, config.ADMIN_PASSWORD);
+    if (!ok) return reply.code(401).send({ error: 'Sai tài khoản hoặc mật khẩu' });
+    return { token: signSession({ u: s.data.username }, config.ADMIN_TOKEN, SESSION_TTL_MS), expiresInSec: SESSION_TTL_MS / 1000 };
+  });
 
   // ── Clients ──
   app.post('/admin/clients', async (req, reply) => {
