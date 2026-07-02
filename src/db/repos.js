@@ -141,6 +141,25 @@ export const Jobs = {
       [now() - olderThanMs, limit],
     )).rows;
   },
+  // Chi tiết job của 1 client trong khoảng thời gian (để dựng hoá đơn).
+  async forBilling(clientId, since, until) {
+    return (await query(
+      `SELECT id,status,price,refunded,params_json,created_at FROM jobs
+       WHERE client_id=$1 AND created_at>=$2 AND created_at<=$3 ORDER BY created_at DESC`,
+      [clientId, since, until],
+    )).rows;
+  },
+  // Tổng hợp mọi client: số video done + credits đã dùng (billable) trong khoảng.
+  async billingAll(since, until) {
+    return (await query(
+      `SELECT client_id,
+        SUM(CASE WHEN status='done' THEN 1 ELSE 0 END)::int videos_done,
+        SUM(CASE WHEN status='done' THEN price ELSE 0 END)::int credits_used,
+        SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END)::int videos_failed
+       FROM jobs WHERE created_at>=$1 AND created_at<=$2 GROUP BY client_id`,
+      [since, until],
+    )).rows;
+  },
 };
 
 // ─────────────────────────── Usage ───────────────────────────

@@ -5,6 +5,7 @@ import { session } from '../session/session.js';
 import { Clients, ApiKeys, Credits, Jobs, Usage, Alerts, Events } from '../db/repos.js';
 import { sweepStaleJobs, checkSessionHealth } from '../videos/service.js';
 import { pushAlert } from '../lib/notify.js';
+import * as catalog from '../artlist/catalog.js';
 
 const clientSchema = z.object({
   name: z.string().min(1),
@@ -110,6 +111,60 @@ export default async function adminRoutes(app) {
   // Tổng hợp bất thường trong N giờ gần nhất (mặc định 1h): đếm theo level/category, HTTP status,
   // lỗi upstream artlist, danh sách lỗi gần đây, request chậm nhất.
   app.get('/admin/logs/summary', async (req) => Events.summary(Math.max(1, Number(req.query?.hours) || 1) * 3_600_000));
+
+  // ── Billing (dễ tính tiền: khách dùng model gì, bao nhiêu video, hết bao nhiêu credits) ──
+  // ?since=&until= (ms). Mặc định 30 ngày gần nhất.
+  const period = (q) => {
+    const until = Number(q?.until) || Date.now();
+    const since = Number(q?.since) || until - 30 * 86_400_000;
+    return { since, until };
+  };
+  async function modelNames() {
+    try { return new Map((await catalog.listVideoModels()).map((m) => [m.modelGroupId, m.slug || m.name])); }
+    catch { return new Map(); }
+  }
+
+  // Tổng hợp mọi client — bảng hoá đơn nhanh.
+  app.get('/admin/billing', async (req) => {
+    const { since, until } = period(req.query);
+    const [rows, clients] = await Promise.all([Jobs.billingAll(since, until), Clients.list()]);
+    const byId = new Map(rows.map((r) => [r.client_id, r]));
+    return {
+      period: { since, until },
+      clients: clients.map((c) => {
+        const r = byId.get(c.id) || {};
+        return { clientId: c.id, name: c.name, status: c.status, balance: c.credits, videosDone: r.videos_done || 0, creditsUsed: r.credits_used || 0, videosFailed: r.videos_failed || 0 };
+      }),
+      totals: { creditsUsed: rows.reduce((s, r) => s + (r.credits_used || 0), 0), videosDone: rows.reduce((s, r) => s + (r.videos_done || 0), 0) },
+    };
+  });
+
+  // Chi tiết 1 client: tổng + phân tích theo model + job gần đây.
+  app.get('/admin/clients/:id/billing', async (req, reply) => {
+    const c = await Clients.get(req.params.id);
+    if (!c) return reply.code(404).send({ error: 'Không tìm thấy client' });
+    const { since, until } = period(req.query);
+    const [jobs, names] = await Promise.all([Jobs.forBilling(c.id, since, until), modelNames()]);
+    const midOf = (j) => { try { return JSON.parse(j.params_json || '{}').modelGroupId ?? null; } catch { return null; } };
+    const byModel = new Map();
+    let videosDone = 0, creditsUsed = 0, videosFailed = 0, creditsRefunded = 0;
+    for (const j of jobs) {
+      const mid = midOf(j);
+      if (j.status === 'done') {
+        videosDone++; creditsUsed += j.price;
+        const k = mid ?? 'unknown';
+        const e = byModel.get(k) || { modelGroupId: mid, model: names.get(mid) || String(mid), count: 0, credits: 0 };
+        e.count++; e.credits += j.price; byModel.set(k, e);
+      } else if (j.status === 'failed') { videosFailed++; if (j.refunded) creditsRefunded += j.price; }
+    }
+    return {
+      clientId: c.id, name: c.name, balance: c.credits, ignorePriceCaps: !!c.ignore_price_caps,
+      period: { since, until },
+      summary: { videosDone, creditsUsed, videosFailed, creditsRefunded },
+      byModel: [...byModel.values()].sort((a, b) => b.credits - a.credits),
+      recentJobs: jobs.slice(0, 50).map((j) => ({ jobId: j.id, status: j.status, credits: j.price, model: names.get(midOf(j)) || '', createdAt: Number(j.created_at) })),
+    };
+  });
 
   // ── Usage / Alerts / Stats ──
   app.get('/admin/usage', async (req) => ({ events: await Usage.recent(Number(req.query?.limit) || 200) }));
