@@ -20,11 +20,14 @@ export async function buildApp() {
 
   const app = Fastify({ loggerInstance: logger, trustProxy: true, bodyLimit: 256 * 1024 });
 
-  // Header bảo mật cơ bản (chống sniffing/clickjacking/rò referrer) — không cần thư viện ngoài.
-  app.addHook('onSend', async (req, reply) => {
+  // Header bảo mật cơ bản + bắt code lỗi cho response 4xx/5xx (để log soi được nguyên nhân).
+  app.addHook('onSend', async (req, reply, payload) => {
     reply.header('x-content-type-options', 'nosniff');
     reply.header('x-frame-options', 'DENY');
     reply.header('referrer-policy', 'no-referrer');
+    if (reply.statusCode >= 400 && typeof payload === 'string' && payload[0] === '{') {
+      try { const b = JSON.parse(payload); req.errMeta = { code: b.code, error: String(b.error || '').slice(0, 160) }; } catch { /* noop */ }
+    }
   });
 
   // ── Ghi log mọi HTTP (trừ path tĩnh) với latency + status ──
@@ -38,6 +41,7 @@ export async function buildApp() {
       category: 'http', event: `${req.method} ${path}`,
       clientId: req.client?.id ?? null, requestId: req.id, method: req.method, path,
       statusCode: status, durationMs: Date.now() - (req.startTime || Date.now()), ip: req.realIp ?? req.ip,
+      ...(req.errMeta ? { message: req.errMeta.error, meta: { code: req.errMeta.code } } : {}),
     });
   });
 
