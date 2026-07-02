@@ -69,6 +69,18 @@
   </section>
 
   <section>
+    <h2>💰 Billing / Tính tiền
+      <span style="float:right;font-weight:400;font-size:13px">
+        <input id="bill_days" type="number" value="30" style="width:64px" /> ngày
+        <button class="ghost" onclick="loadBilling()">Xem</button>
+      </span>
+    </h2>
+    <div id="billTotals" class="muted" style="margin-bottom:8px"></div>
+    <table id="billing"><thead><tr><th>Client</th><th>Video done</th><th>Credits dùng</th><th>Số dư</th><th></th></tr></thead><tbody></tbody></table>
+    <div id="billDetail" style="margin-top:10px"></div>
+  </section>
+
+  <section>
     <h2>Cảnh báo lạm dụng <span id="alertCount" class="pill bad"></span></h2>
     <table id="alerts"><thead><tr><th>Lúc</th><th>Mức</th><th>Loại</th><th>Nội dung</th><th></th></tr></thead><tbody></tbody></table>
   </section>
@@ -102,7 +114,7 @@ async function refresh() {
     const ss = s.session;
     $('#statusLine').innerHTML = `Session nguồn: ${ss.ready && ss.valid ? '<span class="pill ok">OK</span>' : '<span class="pill bad">CẦN CẬP NHẬT</span>'} `
       + `${ss.usingRuntimeOverride ? '(override runtime)' : '(từ .env)'} — cập nhật: ${fmt(ss.updatedAt)}`;
-    await loadClients(); await loadAlerts(); await loadUsage();
+    await loadClients(); await loadBilling(); await loadAlerts(); await loadUsage();
   } catch (e) { $('#statusLine').textContent = 'Lỗi: ' + e.message; }
 }
 async function loadClients() {
@@ -115,6 +127,7 @@ async function loadClients() {
     <td class="row">
       <button class="ghost" onclick="topup('${c.id}')">+Credits</button>
       <button class="ghost" onclick="newKey('${c.id}')">+Key</button>
+      <button class="ghost" title="Bỏ qua maxCredits client gửi (gọi thoải mái, trừ giá thật)" onclick="togglePricing('${c.id}',${c.ignore_price_caps ? 0 : 1})">${c.ignore_price_caps ? '💸 Giá:Tự do' : '🔒 Giá:Chặn'}</button>
       <button class="${c.status === 'active' ? 'warn' : 'ghost'}" onclick="toggle('${c.id}','${c.status === 'active' ? 'suspended' : 'active'}')">${c.status === 'active' ? 'Khoá' : 'Mở'}</button>
     </td></tr>`).join('');
 }
@@ -141,6 +154,28 @@ async function createClient() {
   $('#newkey').innerHTML = `Đã tạo <b>${r.client.name}</b>. API key (lưu ngay): <code>${r.apiKey}</code>`;
   refresh();
 }
+async function loadBilling() {
+  const days = +$('#bill_days').value || 30;
+  const since = Date.now() - days * 86400000;
+  const { clients, totals } = await api(`/admin/billing?since=${since}`);
+  $('#billTotals').innerHTML = `Tổng <b>${days}</b> ngày: <b>${totals.videosDone}</b> video · <b>${totals.creditsUsed}</b> credits`;
+  $('#billing tbody').innerHTML = clients.map((c) => `<tr>
+    <td>${c.name}<div class="muted">${c.status}</div></td>
+    <td>${c.videosDone}</td><td><b>${c.creditsUsed}</b></td><td>${c.balance}</td>
+    <td><button class="ghost" onclick="clientBilling('${c.clientId}','${(c.name || '').replace(/'/g, '')}')">Chi tiết</button></td>
+  </tr>`).join('') || '<tr><td colspan="5" class="muted">Chưa có dữ liệu</td></tr>';
+}
+async function clientBilling(id, name) {
+  const days = +$('#bill_days').value || 30;
+  const since = Date.now() - days * 86400000;
+  const b = await api(`/admin/clients/${id}/billing?since=${since}`);
+  $('#billDetail').innerHTML = `<div class="stat" style="padding:12px">
+    <b>${name}</b> · ${days} ngày — done <b>${b.summary.videosDone}</b> · credits <b>${b.summary.creditsUsed}</b> · failed ${b.summary.videosFailed} (hoàn ${b.summary.creditsRefunded})
+    <table style="margin-top:8px"><thead><tr><th>Model</th><th>Số video</th><th>Credits</th></tr></thead><tbody>
+    ${b.byModel.map((m) => `<tr><td>${m.model}</td><td>${m.count}</td><td>${m.credits}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">—</td></tr>'}
+    </tbody></table></div>`;
+}
+async function togglePricing(id, on) { await api(`/admin/clients/${id}/pricing`, { method: 'POST', body: JSON.stringify({ ignoreCaps: !!on }) }); refresh(); }
 async function topup(id) { const a = +prompt('Cộng/trừ credits (số âm để trừ):', '10000'); if (!a) return; await api(`/admin/clients/${id}/credits`, { method: 'POST', body: JSON.stringify({ amount: a }) }); refresh(); }
 async function newKey(id) { const r = await api(`/admin/clients/${id}/keys`, { method: 'POST' }); alert('API key mới (lưu ngay):\n' + r.apiKey); }
 async function toggle(id, status) { await api(`/admin/clients/${id}/status`, { method: 'POST', body: JSON.stringify({ status }) }); refresh(); }
