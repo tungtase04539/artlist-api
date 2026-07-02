@@ -29,6 +29,7 @@ export default async function systemRoutes(app) {
     await Settings.set('last_warm_at', String(now)); // đặt trước để thu hẹp cửa sổ race giữa các instance
     const [health, swept] = await Promise.all([checkSessionHealth(), sweepStaleJobs(15000)]);
     const prunedLogs = await Events.prune(config.LOG_RETENTION_DAYS * 86_400_000).catch(() => 0); // dọn log cũ
+    await Settings.pruneKeysLike('login_guard:', 86_400_000).catch(() => 0); // dọn khoá login cũ (>1 ngày)
     return { ok: health.ok === true, warmed: true, swept, prunedLogs };
   });
 }

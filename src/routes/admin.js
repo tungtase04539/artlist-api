@@ -7,6 +7,9 @@ import { sweepStaleJobs, checkSessionHealth } from '../videos/service.js';
 import { pushAlert } from '../lib/notify.js';
 import * as catalog from '../artlist/catalog.js';
 import { signSession, safeEqualStr } from '../lib/token.js';
+import { loginStatus, recordFail, recordSuccess } from '../auth/loginGuard.js';
+import { realIp } from '../lib/ip.js';
+import { logEvent } from '../lib/events.js';
 
 const clientSchema = z.object({
   name: z.string().min(1),
@@ -24,13 +27,27 @@ export default async function adminRoutes(app) {
   // Đăng nhập bằng tài khoản/mật khẩu → cấp session token (12h). Miễn adminAuth (xem adminAuth.js).
   const SESSION_TTL_MS = 12 * 3600 * 1000;
   app.post('/admin/login', async (req, reply) => {
+    const ip = realIp(req);
     const s = z.object({ username: z.string().min(1), password: z.string().min(1) }).safeParse(req.body);
     if (!s.success) return reply.code(400).send({ error: 'Cần username, password' });
     if (!config.ADMIN_USERNAME || !config.ADMIN_PASSWORD) {
       return reply.code(503).send({ error: 'Chưa bật đăng nhập (đặt ADMIN_USERNAME & ADMIN_PASSWORD).' });
     }
+    // Chống brute-force: IP bị khoá thì chặn ngay.
+    const lock = await loginStatus(ip);
+    if (lock.locked) {
+      reply.header('retry-after', lock.retryAfterSec);
+      return reply.code(429).send({ error: `Sai quá nhiều lần — thử lại sau ${Math.ceil(lock.retryAfterSec / 60)} phút.` });
+    }
     const ok = safeEqualStr(s.data.username, config.ADMIN_USERNAME) & safeEqualStr(s.data.password, config.ADMIN_PASSWORD);
-    if (!ok) return reply.code(401).send({ error: 'Sai tài khoản hoặc mật khẩu' });
+    if (!ok) {
+      const st = await recordFail(ip);
+      logEvent({ level: 'warn', category: 'abuse', event: 'login_fail', ip, meta: { fails: st.fails, locked: !!st.lockedUntil } }).catch(() => {});
+      if (st.lockedUntil) pushAlert({ severity: 'critical', kind: 'login_bruteforce', message: `IP ${ip} bị khoá đăng nhập admin (sai ${st.fails} lần)`, meta: { ip } }).catch(() => {});
+      const remaining = Math.max(0, config.LOGIN_MAX_FAILS - st.fails);
+      return reply.code(401).send({ error: `Sai tài khoản hoặc mật khẩu.${remaining > 0 ? ` Còn ${remaining} lần trước khi bị khoá.` : ''}` });
+    }
+    await recordSuccess(ip);
     return { token: signSession({ u: s.data.username }, config.ADMIN_TOKEN, SESSION_TTL_MS), expiresInSec: SESSION_TTL_MS / 1000 };
   });
 

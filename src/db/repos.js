@@ -239,6 +239,10 @@ export const Settings = {
       [key, value, now()],
     );
   },
+  async pruneKeysLike(prefix, olderThanMs) {
+    const r = await query('DELETE FROM app_settings WHERE key LIKE $1 AND updated_at < $2', [`${prefix}%`, now() - olderThanMs]);
+    return r.rowCount ?? r.affectedRows ?? 0;
+  },
 };
 
 // ─────────────────────────── Event log (đọc lại để soi bất thường) ───────────────────────────

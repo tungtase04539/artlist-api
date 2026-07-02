@@ -12,6 +12,10 @@ const schema = z.object({
   // Đăng nhập dashboard bằng tài khoản/mật khẩu (tuỳ chọn). Đặt cả 2 để bật /admin/login.
   ADMIN_USERNAME: z.string().optional(),
   ADMIN_PASSWORD: z.string().optional(),
+  // Chống brute-force đăng nhập: khoá IP sau N lần sai trong cửa sổ, khoá trong X phút.
+  LOGIN_MAX_FAILS: z.coerce.number().int().positive().default(5),
+  LOGIN_WINDOW_MIN: z.coerce.number().int().positive().default(15),
+  LOGIN_LOCK_MIN: z.coerce.number().int().positive().default(15),
 
   // DB: Postgres/Supabase (prod). Để trống => PGlite in-process (local/test).
   DATABASE_URL: z.string().optional(),
