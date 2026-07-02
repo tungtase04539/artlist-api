@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { clientAuth } from '../auth/clientAuth.js';
 import * as catalog from '../artlist/catalog.js';
 import * as service from '../videos/service.js';
+import * as artlist from '../artlist/client.js';
 import { Jobs, Credits } from '../db/repos.js';
 import { session } from '../session/session.js';
 import { logEvent } from '../lib/events.js';
@@ -51,6 +52,25 @@ export default async function v1Routes(app) {
     if (!id) return reply.code(404).send({ error: 'Không tìm thấy model video' });
     const [models, params] = await Promise.all([catalog.listVideoModels(), catalog.getModelParams(id)]);
     return { ...models.find((m) => m.modelGroupId === id), params: params.params };
+  });
+
+  // Báo giá (free, không tạo video) — để client hiện giá trước khi tạo.
+  app.get('/v1/quote', async (req, reply) => {
+    if (!session.isReady()) return reply.code(503).send({ error: 'Dịch vụ chưa sẵn sàng.' });
+    const q = req.query || {};
+    let modelGroupId = 358;
+    if (q.model) { modelGroupId = await catalog.resolveModelId(q.model); if (!modelGroupId) return reply.code(400).send({ error: 'model không tồn tại', code: 'INVALID_MODEL' }); }
+    else if (q.modelGroupId) modelGroupId = Number(q.modelGroupId);
+    try {
+      const quote = await artlist.getCostQuote({
+        modelGroupId, prompt: 'estimate',
+        resolution: q.resolution, duration: q.duration != null ? Number(q.duration) : undefined,
+        aspectRatio: q.aspectRatio, generateAudio: q.generateAudio != null ? q.generateAudio === 'true' : undefined,
+      });
+      return { modelGroupId, credits: quote.price };
+    } catch {
+      return reply.code(400).send({ error: 'Không báo giá được cho tham số này', code: 'QUOTE_FAILED' });
+    }
   });
 
   app.post('/v1/videos', async (req, reply) => {
