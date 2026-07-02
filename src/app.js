@@ -53,7 +53,7 @@ export async function buildApp() {
       clientId: req.client?.id ?? null, requestId: req.id, method: req.method, path: String(req.url).split('?')[0],
       statusCode: status, ip: req.realIp ?? req.ip, message: String(err.message), meta: { code: err.code },
     });
-    reply.code(status).send({ error: status < 500 ? err.message : 'Lỗi máy chủ', code: err.code || 'ERROR', detail: String(err.message || err).slice(0, 300) });
+    reply.code(status).send({ error: status < 500 ? err.message : 'Lỗi máy chủ', code: err.code || 'ERROR' });
   });
 
   app.get('/health', async () => ({ status: 'ok', session: session.status() }));
