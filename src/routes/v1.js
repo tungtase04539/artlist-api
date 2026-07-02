@@ -4,6 +4,7 @@ import * as catalog from '../artlist/catalog.js';
 import * as service from '../videos/service.js';
 import { Jobs, Credits } from '../db/repos.js';
 import { session } from '../session/session.js';
+import { logEvent } from '../lib/events.js';
 
 const createSchema = z
   .object({
@@ -53,6 +54,8 @@ export default async function v1Routes(app) {
   });
 
   app.post('/v1/videos', async (req, reply) => {
+    // Ghi lại body request để soi client/relay gửi đúng format chưa (debug tích hợp).
+    logEvent({ level: 'debug', category: 'client_req', event: 'create_body', clientId: req.client?.id, ip: req.realIp ?? req.ip, meta: { body: req.body } }).catch(() => {});
     if (!session.isReady()) return reply.code(503).send({ error: 'Dịch vụ chưa sẵn sàng (session nguồn).' });
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'Tham số không hợp lệ', issues: parsed.error.issues });
