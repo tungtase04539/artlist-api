@@ -128,6 +128,16 @@ export default async function adminRoutes(app) {
     return { clientId: req.params.id, balance: r.balance };
   });
 
+  // ── Credits ví MUSIC (Suno) — tách riêng khỏi credits video ──
+  app.post('/admin/clients/:id/music-credits', async (req, reply) => {
+    const s = z.object({ amount: z.number().int(), reason: z.string().optional() }).safeParse(req.body);
+    if (!s.success) return reply.code(400).send({ error: 'Cần amount (số nguyên, + nạp / - trừ)' });
+    if (!(await Clients.get(req.params.id))) return reply.code(404).send({ error: 'Không tìm thấy client' });
+    const r = await Credits.changeMusic(req.params.id, s.data.amount, s.data.reason ?? (s.data.amount >= 0 ? 'topup' : 'adjust'));
+    if (!r.ok) return reply.code(400).send({ error: 'Số dư music không đủ để trừ', balance: r.balance });
+    return { clientId: req.params.id, musicBalance: r.balance };
+  });
+
   // ── API keys ──
   app.post('/admin/clients/:id/keys', async (req, reply) => {
     if (!(await Clients.get(req.params.id))) return reply.code(404).send({ error: 'Không tìm thấy client' });

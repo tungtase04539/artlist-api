@@ -52,13 +52,17 @@ const musicSchema = z
 export default async function v1Routes(app) {
   app.addHook('preHandler', clientAuth);
 
-  app.get('/v1/me', async (req) => ({
-    clientId: req.client.id,
-    name: req.client.name,
-    credits: await Credits.balance(req.client.id),
-    hasDefaultSession: Boolean(req.client.default_chat_session_id),
-    rateLimit: { perMinute: req.client.rate_per_min, perDay: req.client.rate_per_day },
-  }));
+  app.get('/v1/me', async (req) => {
+    const [credits, musicCredits] = await Promise.all([Credits.balance(req.client.id), Credits.musicBalance(req.client.id)]);
+    return {
+      clientId: req.client.id,
+      name: req.client.name,
+      credits, // ví video/Seedance
+      musicCredits, // ví nhạc (Suno) — tách riêng
+      hasDefaultSession: Boolean(req.client.default_chat_session_id),
+      rateLimit: { perMinute: req.client.rate_per_min, perDay: req.client.rate_per_day },
+    };
+  });
 
   app.get('/v1/models', async (req, reply) => {
     if (!session.isReady()) return reply.code(503).send({ error: 'Dịch vụ chưa sẵn sàng (session nguồn).' });

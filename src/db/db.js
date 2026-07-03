@@ -59,6 +59,8 @@ async function migrate() {
   )`);
   // Cờ: bỏ qua maxCredits/expectedCredits client gửi (chỉ số dư giới hạn). Cho tích hợp relay.
   await _q(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS ignore_price_caps integer NOT NULL DEFAULT 0`);
+  // Ví MUSIC riêng (Suno) — TÁCH khỏi credits video/Seedance (định giá khác nhau, ko dùng chung).
+  await _q(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS music_credits integer NOT NULL DEFAULT 0`);
 
   await _q(`CREATE TABLE IF NOT EXISTS api_keys (
     id text PRIMARY KEY,
@@ -80,6 +82,8 @@ async function migrate() {
     balance_after integer NOT NULL,
     created_at bigint NOT NULL
   )`);
+  // Phân biệt ví trong lịch sử: 'video' (mặc định) vs 'music'.
+  await _q(`ALTER TABLE credit_ledger ADD COLUMN IF NOT EXISTS currency text NOT NULL DEFAULT 'video'`);
   await _q(`CREATE INDEX IF NOT EXISTS idx_ledger_client ON credit_ledger(client_id, created_at)`);
 
   await _q(`CREATE TABLE IF NOT EXISTS jobs (

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>音乐生成 · Studio</title>
+<title>Suno · AI 音乐生成</title>
 <style>
   :root{
     --bg:#0a0d14; --panel:#131826; --elev:#1a2132; --line:rgba(255,255,255,.08); --line2:rgba(255,255,255,.14);
@@ -20,9 +20,13 @@
   .wrap{max-width:1240px;margin:auto;padding:0 20px}
   header{position:sticky;top:0;z-index:20;backdrop-filter:blur(12px);background:rgba(10,13,20,.6);border-bottom:1px solid var(--line)}
   .bar{display:flex;align-items:center;gap:14px;height:60px}
-  .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:15px}
-  .dot{width:26px;height:26px;border-radius:8px;background:var(--grad);box-shadow:0 4px 18px rgba(168,85,247,.5);display:flex;align-items:center;justify-content:center;font-size:14px}
+  .brand{display:flex;align-items:center;gap:10px}
+  .brand .wm{font-weight:800;font-size:20px;letter-spacing:-.5px;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .logo{flex:0 0 auto;filter:drop-shadow(0 4px 14px rgba(168,85,247,.5))}
   .spacer{margin-left:auto}
+  .nav{display:flex;gap:4px;background:#0d1220;border:1px solid var(--line2);border-radius:11px;padding:4px}
+  .navlink{padding:7px 14px;border-radius:8px;font-size:13px;font-weight:600;color:var(--mut);cursor:pointer;transition:.15s;border:0;background:none;font-family:inherit}
+  .navlink.on{background:var(--grad);color:#fff}
   .pill{display:inline-flex;align-items:center;gap:7px;background:var(--elev);border:1px solid var(--line);border-radius:999px;padding:7px 13px;font-size:13px}
   .pill b{color:#fff}
   .iconbtn{background:var(--elev);border:1px solid var(--line);color:var(--fg);border-radius:10px;padding:8px 12px;cursor:pointer;font:inherit}
@@ -37,7 +41,6 @@
   input:focus,select:focus,textarea:focus{border-color:var(--acc2);box-shadow:0 0 0 3px rgba(236,72,153,.18)}
   textarea{min-height:96px;resize:vertical;line-height:1.6}
   textarea.lyrics{min-height:150px}
-  /* mode tabs */
   .tabs{display:flex;gap:6px;background:#0d1220;border:1px solid var(--line2);border-radius:12px;padding:4px}
   .tab{flex:1;text-align:center;padding:9px;border-radius:9px;cursor:pointer;font-size:13px;font-weight:600;color:var(--mut);transition:.15s}
   .tab.on{background:var(--grad);color:#fff;box-shadow:0 6px 16px rgba(168,85,247,.35)}
@@ -52,7 +55,6 @@
   .row{display:flex;gap:10px}
   .hide{display:none!important}
   .cc{font-size:11px;color:var(--mut);float:right}
-  /* song list */
   .songs{display:flex;flex-direction:column;gap:10px;margin-top:6px}
   .song{display:flex;gap:12px;align-items:center;background:var(--elev);border:1px solid var(--line);border-radius:14px;padding:10px;transition:border-color .15s}
   .song:hover{border-color:var(--acc2)}
@@ -70,10 +72,27 @@
   .dl{color:var(--mut);cursor:pointer;font-size:16px}.dl:hover{color:#fff}
   .empty{text-align:center;padding:30px;color:var(--mut)}
   /* gate */
-  .gate{max-width:440px;margin:8vh auto;text-align:center}
+  .gate{max-width:460px;margin:7vh auto;text-align:center}
   .gate .card{padding:30px}
-  .gate .dot{width:44px;height:44px;border-radius:12px;margin:0 auto 14px;font-size:22px}
+  .gate .logo{margin:0 auto 14px;display:block}
   .gate h2{margin:0 0 6px;font-size:20px}
+  /* docs */
+  .docs{max-width:900px;margin:auto}
+  .docs .card{margin-bottom:18px}
+  .docs h2{font-size:16px;margin:2px 0 12px;color:#fff}
+  .docs h4{font-size:13px;color:#fff;margin:16px 0 6px}
+  .docs p{color:var(--mut);font-size:13px;line-height:1.7;margin:6px 0}
+  .kv{display:grid;grid-template-columns:130px 1fr;gap:6px 12px;font-size:13px;margin:8px 0}
+  .kv code{color:#ffd7f0} .kv .d{color:var(--mut)}
+  .codewrap{position:relative;margin:10px 0}
+  pre{background:#0b0f1a;border:1px solid var(--line2);border-radius:10px;padding:14px;overflow-x:auto;margin:0}
+  code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.6}
+  pre code{color:#d5def0;white-space:pre}
+  .copy{position:absolute;top:8px;right:8px;background:var(--elev);border:1px solid var(--line2);color:var(--fg);border-radius:7px;padding:4px 9px;font-size:11px;cursor:pointer}
+  .copy:hover{border-color:var(--acc2)}
+  .method{font-weight:800;font-size:12px;padding:2px 8px;border-radius:6px;background:rgba(52,211,153,.16);color:var(--grn);margin-right:8px}
+  .method.post{background:rgba(236,72,153,.18);color:#ff9ed3}
+  .path{font-family:ui-monospace,monospace;font-size:13px;color:#fff}
   /* mini player */
   #player{position:fixed;left:0;right:0;bottom:0;z-index:40;background:rgba(16,20,32,.92);backdrop-filter:blur(14px);border-top:1px solid var(--line2);transform:translateY(100%);transition:transform .25s}
   #player.on{transform:none}
@@ -82,7 +101,6 @@
   .pmeta{min-width:0;flex:0 0 auto;width:180px}
   .pmeta .t{font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   #player audio{flex:1;height:38px}
-  /* toast */
   #toasts{position:fixed;right:18px;bottom:92px;z-index:50;display:flex;flex-direction:column;gap:10px}
   .toast{background:var(--elev);border:1px solid var(--line2);border-left:3px solid var(--acc2);border-radius:10px;padding:12px 14px;font-size:13px;max-width:320px;box-shadow:0 12px 30px rgba(0,0,0,.4);animation:tin .2s ease}
   .toast.err{border-left-color:var(--red)} .toast.ok{border-left-color:var(--grn)}
@@ -90,12 +108,23 @@
 </style>
 </head>
 <body>
+<!-- Suno logo mark (reused) -->
+<svg width="0" height="0" style="position:absolute"><defs>
+  <linearGradient id="sunoGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#a855f7"/><stop offset="1" stop-color="#ec4899"/></linearGradient>
+</defs></svg>
+
 <header><div class="wrap bar">
-  <div class="brand"><div class="dot">🎵</div>音乐生成 · Studio</div>
+  <div class="brand">
+    <svg class="logo" width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="url(#sunoGrad)"/><circle cx="16" cy="16" r="8.5" fill="none" stroke="#fff" stroke-width="2.4" opacity=".95"/><circle cx="16" cy="16" r="3" fill="#fff"/></svg>
+    <span class="wm">Suno</span>
+  </div>
+  <div class="nav" style="margin-left:18px">
+    <button class="navlink on" id="navStudio" onclick="showView('studio')">工作台</button>
+    <button class="navlink" id="navDocs" onclick="showView('docs')">API 文档</button>
+  </div>
   <div class="spacer"></div>
   <span class="pill" id="creditPill" style="display:none">💎 <b id="credits">–</b> 积分</span>
   <a class="pill" href="/app" target="_blank">视频</a>
-  <a class="pill" href="/guide" target="_blank">文档</a>
   <button class="iconbtn" id="logoutBtn" style="display:none" onclick="disconnect()">退出</button>
 </div></header>
 
@@ -103,34 +132,29 @@
   <!-- Gate -->
   <div id="gate" class="gate">
     <div class="card">
-      <div class="dot">🎵</div>
-      <h2>连接到音乐生成 API</h2>
-      <p class="muted">粘贴你的 API Key 即可开始用 Suno 生成歌曲</p>
+      <svg class="logo" width="46" height="46" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="url(#sunoGrad)"/><circle cx="16" cy="16" r="8.5" fill="none" stroke="#fff" stroke-width="2.4" opacity=".95"/><circle cx="16" cy="16" r="3" fill="#fff"/></svg>
+      <h2>输入你的 API Key</h2>
+      <p class="muted">用 API Key 登录后即可用 Suno 生成真实歌曲</p>
       <input id="keyInput" type="password" placeholder="alk_xxxxxxxx..." style="margin-top:14px" onkeydown="if(event.key==='Enter')connect()" />
-      <button class="btn" style="margin-top:12px" onclick="connect()">连接</button>
-      <p class="muted" style="margin-top:14px">没有 Key？请联系服务商 · <a href="/guide" target="_blank">查看文档</a></p>
+      <button class="btn" style="margin-top:12px" onclick="connect()">登录</button>
+      <p class="muted" style="margin-top:14px">没有 Key？请联系服务商获取 · <span style="cursor:pointer;color:#e0b3ff" onclick="showView('docs')">查看 API 文档</span></p>
     </div>
   </div>
 
-  <!-- App -->
+  <!-- App (studio) -->
   <div id="app" class="grid hide">
-    <!-- Create -->
     <section class="card">
       <h3>✨ 创建歌曲</h3>
       <div class="tabs">
         <div class="tab on" id="tabSimple" onclick="setMode('simple')">简单模式</div>
         <div class="tab" id="tabCustom" onclick="setMode('custom')">自定义</div>
       </div>
-
-      <!-- simple -->
       <div id="paneSimple">
         <label>歌曲描述 <span class="cc" id="ccDesc">0/500</span></label>
         <textarea id="desc" maxlength="500" placeholder="描述你想要的歌曲，例如：一首关于日出与追梦的温暖独立流行乐，木吉他，励志" oninput="cc('desc','ccDesc',500)"></textarea>
         <div class="switch"><span class="muted" id="instLabel">纯音乐（无人声）：关闭</span>
           <div class="sw" id="instSw" onclick="toggleInst()"></div></div>
       </div>
-
-      <!-- custom -->
       <div id="paneCustom" class="hide">
         <label>标题（可选） <span class="cc" id="ccTitle">0/80</span></label>
         <input id="title" maxlength="80" placeholder="Sunrise Lines" oninput="cc('title','ccTitle',80)" />
@@ -142,21 +166,21 @@
         <select id="vocal"><option value="">默认</option><option value="f">女声</option><option value="m">男声</option></select>
         <p class="muted" style="margin-top:8px">歌词或风格标签至少填一项。</p>
       </div>
-
       <div class="est"><span class="muted">每次生成（含 2 首）</span><span class="n" id="estN">– 积分</span></div>
       <button class="btn" id="genBtn" onclick="generate()"><span>生成歌曲</span></button>
     </section>
 
-    <!-- Library -->
     <section class="card">
       <h3>🎧 我的歌曲 <button class="iconbtn" style="margin-left:auto;padding:5px 10px;font-size:12px" onclick="loadHistory()">刷新</button></h3>
       <div class="songs" id="songs"></div>
       <div class="empty" id="empty">还没有歌曲，去左边创建第一首吧 🎶</div>
     </section>
   </div>
+
+  <!-- Docs -->
+  <div id="docs" class="docs hide"></div>
 </main>
 
-<!-- mini player -->
 <div id="player"><div class="pwrap">
   <div class="pcover" id="pCover"></div>
   <div class="pmeta"><div class="t" id="pTitle">—</div><div class="muted" id="pSub"></div></div>
@@ -167,7 +191,8 @@
 <script>
 const $=(s)=>document.querySelector(s);
 let KEY=localStorage.getItem('clientKey')||'';
-let MODE='simple', INST=false, PRICE=0, HISTORY=[], polling=new Set();
+let MODE='simple', INST=false, PRICE=0, HISTORY=[], polling=new Set(), VIEW='studio', connected=false;
+const ORIGIN=location.origin;
 
 function toast(msg,type){const t=document.createElement('div');t.className='toast'+(type?' '+type:'');t.textContent=msg;$('#toasts').appendChild(t);setTimeout(()=>t.remove(),4200);}
 async function api(path,opts={}){
@@ -179,22 +204,35 @@ async function api(path,opts={}){
 const fmtTime=(t)=>t?new Date(Number(t)).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
 const tagFor=(s)=>s==='done'?'<span class="tag t-done">完成</span>':s==='failed'?'<span class="tag t-fail">失败</span>':'<span class="tag t-proc">生成中</span>';
 function cc(id,ccId,max){$('#'+ccId).textContent=($('#'+id).value.length)+'/'+max;}
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+/* ---- views ---- */
+function showView(v){
+  VIEW=v;
+  $('#navStudio').classList.toggle('on',v==='studio');
+  $('#navDocs').classList.toggle('on',v==='docs');
+  if(v==='docs' && !$('#docs').dataset.rendered){ renderDocs(); $('#docs').dataset.rendered='1'; }
+  $('#docs').classList.toggle('hide', v!=='docs');
+  $('#gate').classList.toggle('hide', v!=='studio' || connected);
+  $('#app').classList.toggle('hide', v!=='studio' || !connected);
+}
 
 /* ---- connect ---- */
 $('#keyInput').value=KEY;
-function showApp(on){$('#gate').classList.toggle('hide',on);$('#app').classList.toggle('hide',!on);$('#creditPill').style.display=on?'inline-flex':'none';$('#logoutBtn').style.display=on?'inline-block':'none';}
+function setLogged(on){connected=on;$('#creditPill').style.display=on?'inline-flex':'none';$('#logoutBtn').style.display=on?'inline-block':'none';
+  if(VIEW==='studio'){$('#gate').classList.toggle('hide',on);$('#app').classList.toggle('hide',!on);}}
 async function connect(){
   KEY=($('#keyInput').value||KEY).trim(); if(!KEY) return toast('请输入 API Key','err');
   localStorage.setItem('clientKey',KEY);
   try{
-    const me=await api('/v1/me'); $('#credits').textContent=me.credits.toLocaleString();
+    const me=await api('/v1/me'); $('#credits').textContent=(me.musicCredits??0).toLocaleString();
     try{ const p=await api('/v1/music/price'); PRICE=p.credits; $('#estN').textContent=PRICE.toLocaleString()+' 积分'; }
-    catch{ $('#estN').textContent='—'; toast('音乐服务未开启','err'); }
-    showApp(true); await loadHistory();
+    catch{ $('#estN').textContent='—'; }
+    setLogged(true); await loadHistory();
   }catch(e){ toast(e.message,'err'); }
 }
-function disconnect(){KEY='';localStorage.removeItem('clientKey');showApp(false);}
-async function refreshCredits(){try{const me=await api('/v1/me');$('#credits').textContent=me.credits.toLocaleString();}catch{}}
+function disconnect(){KEY='';localStorage.removeItem('clientKey');setLogged(false);$('#keyInput').value='';showView('studio');}
+async function refreshCredits(){try{const me=await api('/v1/me');$('#credits').textContent=(me.musicCredits??0).toLocaleString();}catch{}}
 
 /* ---- mode ---- */
 function setMode(m){MODE=m;$('#tabSimple').classList.toggle('on',m==='simple');$('#tabCustom').classList.toggle('on',m==='custom');$('#paneSimple').classList.toggle('hide',m!=='simple');$('#paneCustom').classList.toggle('hide',m!=='custom');}
@@ -236,57 +274,121 @@ async function poll(id){
   tick();
 }
 
-/* ---- render ---- */
+/* ---- render songs ---- */
 async function loadHistory(){ try{ HISTORY=await api('/v1/music'); renderSongs(); HISTORY.forEach(j=>{if(j.status==='pending'||j.status==='processing')poll(j.jobId);}); }catch(e){ toast(e.message,'err'); } }
 function renderSongs(){
   $('#empty').style.display=HISTORY.length?'none':'block';
   const rows=[];
-  HISTORY.forEach((j,ji)=>{
+  HISTORY.forEach((j)=>{
     const urls=(j.audioUrls&&j.audioUrls.length)?j.audioUrls:(j.audioUrl?[j.audioUrl]:[]);
     const title=j.title||(j.mode==='custom'?'自定义歌曲':'AI 歌曲');
     if(j.status==='done'&&urls.length){
-      urls.forEach((u,ti)=>rows.push(songRow({
-        cover:j.imageUrl,title:urls.length>1?`${title} · 版本${ti+1}`:title,
-        sub:`${j.credits}积分 · ${fmtTime(j.createdAt)}`,url:u,status:'done'
-      })));
+      urls.forEach((u,ti)=>rows.push(songRow({cover:j.imageUrl,title:urls.length>1?`${title} · 版本${ti+1}`:title,sub:`${j.credits}积分 · ${fmtTime(j.createdAt)}`,url:u,status:'done'})));
     }else{
-      rows.push(songRow({cover:j.imageUrl,title,sub:(j.status==='failed'?(j.error||'失败'):'生成中…通常 1-3 分钟')+' · '+fmtTime(j.createdAt),
-        url:j.streamUrl||'',status:j.status,tagHtml:tagFor(j.status)}));
+      rows.push(songRow({cover:j.imageUrl,title,sub:(j.status==='failed'?(j.error||'失败'):'生成中…通常 1-3 分钟')+' · '+fmtTime(j.createdAt),url:j.streamUrl||'',status:j.status,tagHtml:tagFor(j.status)}));
     }
   });
   $('#songs').innerHTML=rows.join('');
 }
 function songRow({cover,title,sub,url,status,tagHtml}){
   const coverStyle=cover?`background-image:url('${cover}')`:'';
-  const playable=!!url;
-  const play=status==='done'||url
-    ? `<div class="pbtn ${status==='done'?'':'show'}" onclick='playTrack(${JSON.stringify(url)},${JSON.stringify(title)},${JSON.stringify(cover||"")})'>▶</div>`
-    : (status==='processing'||status==='pending'?'':'');
+  const play=(status==='done'||url)?`<div class="pbtn ${status==='done'?'':'show'}" onclick='playTrack(${JSON.stringify(url)},${JSON.stringify(title)},${JSON.stringify(cover||"")})'>▶</div>`:'';
   const spin=(status==='processing'||status==='pending')?' spin':'';
-  const right=status==='done'
-    ? `<span class="dl" title="下载" onclick='dl(${JSON.stringify(url)})'>⬇</span>`
-    : (tagHtml||tagFor(status));
-  return `<div class="song">
-    <div class="cover${spin}" style="${coverStyle}">${play}</div>
+  const right=status==='done'?`<span class="dl" title="下载" onclick='dl(${JSON.stringify(url)})'>⬇</span>`:(tagHtml||tagFor(status));
+  return `<div class="song"><div class="cover${spin}" style="${coverStyle}">${play}</div>
     <div class="sinfo"><div class="stitle">${esc(title)}</div><div class="stags">${esc(sub)}</div></div>
-    <div class="sact">${right}</div>
-  </div>`;
+    <div class="sact">${right}</div></div>`;
 }
-function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 
 /* ---- player ---- */
 function playTrack(url,title,cover){
   if(!url)return toast('暂无可播放音频','err');
   const a=$('#audio'); a.src=url; a.play().catch(()=>{});
-  $('#pTitle').textContent=title||'播放中';
-  $('#pSub').textContent='正在播放';
-  $('#pCover').style.backgroundImage=cover?`url('${cover}')`:'';
-  $('#player').classList.add('on');
+  $('#pTitle').textContent=title||'播放中'; $('#pSub').textContent='正在播放';
+  $('#pCover').style.backgroundImage=cover?`url('${cover}')`:''; $('#player').classList.add('on');
 }
 function dl(url){ if(!url)return; const a=document.createElement('a'); a.href=url; a.download=''; a.target='_blank'; a.click(); }
 
+/* ---- API docs (embedded) ---- */
+function copyCode(btn){const pre=btn.nextElementSibling;navigator.clipboard.writeText(pre.innerText).then(()=>{btn.textContent='已复制';setTimeout(()=>btn.textContent='复制',1500);}).catch(()=>{});}
+function block(code){return `<div class="codewrap"><button class="copy" onclick="copyCode(this)">复制</button><pre><code>${esc(code)}</code></pre></div>`;}
+function renderDocs(){
+  const B=ORIGIN;
+  const simple=`curl -X POST ${B}/v1/music \\
+  -H "X-API-Key: 你的KEY" -H "content-type: application/json" \\
+  -d '{"mode":"simple","prompt":"一首关于日出与追梦的温暖独立流行乐","instrumental":false}'`;
+  const custom=`curl -X POST ${B}/v1/music \\
+  -H "X-API-Key: 你的KEY" -H "content-type: application/json" \\
+  -d '{
+    "mode":"custom",
+    "title":"Gió Bắc",
+    "lyrics":"[Verse]\\n...你的歌词...",
+    "tags":"vietnamese drill, hard 808, aggressive",
+    "vocalGender":"m"
+  }'`;
+  const createResp=`{ "jobId":"019f27...","status":"processing","credits":600 }`;
+  const pollCmd=`curl ${B}/v1/music/JOB_ID -H "X-API-Key: 你的KEY"`;
+  const doneResp=`{
+  "jobId":"019f27...",
+  "status":"done",
+  "title":"Midnight Run",
+  "audioUrl":"https://cdn1.suno.ai/xxx.mp3",
+  "audioUrls":["https://cdn1.suno.ai/xxx.mp3","https://cdn1.suno.ai/yyy.mp3"],
+  "imageUrl":"https://cdn2.suno.ai/image_xxx.jpeg",
+  "duration":181.9,
+  "credits":600
+}`;
+  $('#docs').innerHTML=`
+    <div class="card">
+      <h2>🎵 Suno 音乐 API 接入文档</h2>
+      <p>异步流程：<b>创建 → 轮询直到 status=done</b>。每次生成返回 <b>2 个版本</b>（audioUrls），音频为可直接播放/下载的直链。</p>
+      <div class="kv">
+        <code>Base URL</code><div class="d">${esc(B)}</div>
+        <code>认证</code><div class="d">请求头 <code>X-API-Key: 你的KEY</code>（向服务商获取）</div>
+        <code>计费</code><div class="d">每次生成 = <b>${(PRICE||600)} 积分</b>（含 2 版本），与时长无关；失败自动退款</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><span class="method post">POST</span><span class="path">/v1/music</span></h2>
+      <p>创建歌曲。两种模式：<code>simple</code>（一句描述）或 <code>custom</code>（自写歌词+风格）。</p>
+      <h4>简单模式</h4>${block(simple)}
+      <h4>自定义模式</h4>${block(custom)}
+      <h4>参数</h4>
+      <div class="kv">
+        <code>mode</code><div class="d">simple | custom（默认 simple）</div>
+        <code>prompt</code><div class="d">[simple] 歌曲描述，≤500 字</div>
+        <code>instrumental</code><div class="d">[simple] 纯音乐无人声，true/false</div>
+        <code>title</code><div class="d">[custom] 标题，≤80 字</div>
+        <code>lyrics</code><div class="d">[custom] 歌词，≤5000 字</div>
+        <code>tags</code><div class="d">[custom] 风格标签，≤1000 字（lyrics 或 tags 至少填一个）</div>
+        <code>vocalGender</code><div class="d">[custom] f=女声 / m=男声</div>
+        <code>maxCredits</code><div class="d">可选，价格上限；超出则拒绝</div>
+      </div>
+      <h4>返回 202</h4>${block(createResp)}
+    </div>
+
+    <div class="card">
+      <h2><span class="method">GET</span><span class="path">/v1/music/{jobId}</span></h2>
+      <p>查询进度（每次调用都会推进状态）。建议每 5 秒轮询一次。</p>
+      ${block(pollCmd)}
+      <h4>完成时返回</h4>${block(doneResp)}
+      <p>状态流转：<code>processing</code> → <code>done</code> | <code>failed</code>（失败自动退还积分）。</p>
+    </div>
+
+    <div class="card">
+      <h2><span class="method">GET</span><span class="path">/v1/music</span> · <span class="path">/v1/music/price</span> · <span class="path">/v1/me</span></h2>
+      <div class="kv">
+        <code>GET /v1/music</code><div class="d">我的全部歌曲列表</div>
+        <code>GET /v1/music/price</code><div class="d">单次生成价格 → <code>{"credits":${(PRICE||600)}}</code></div>
+        <code>GET /v1/me</code><div class="d">账户信息 + 积分余额</div>
+      </div>
+      <p style="margin-top:14px">完整 OpenAPI/Swagger：<a href="/docs" target="_blank">${esc(B)}/docs</a></p>
+    </div>`;
+}
+
 /* ---- boot ---- */
-showApp(!!KEY); if(KEY) connect();
+if(KEY){ connect(); } else { setLogged(false); }
 </script>
 </body>
 </html>

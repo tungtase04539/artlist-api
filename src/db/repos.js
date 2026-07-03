@@ -96,6 +96,24 @@ export const Credits = {
   async ledger(clientId, limit = 100) {
     return (await query('SELECT * FROM credit_ledger WHERE client_id=$1 ORDER BY id DESC LIMIT $2', [clientId, limit])).rows;
   },
+
+  // ── Ví MUSIC (Suno) — tách riêng, cột clients.music_credits ──
+  async musicBalance(clientId) {
+    return one(await query('SELECT music_credits FROM clients WHERE id=$1', [clientId]))?.music_credits ?? 0;
+  },
+  async changeMusic(clientId, amount, reason, jobId = null) {
+    const r = await query(
+      'UPDATE clients SET music_credits = music_credits + $1 WHERE id=$2 AND music_credits + $1 >= 0 RETURNING music_credits',
+      [amount, clientId],
+    );
+    if (!r.rows.length) return { ok: false, balance: await this.musicBalance(clientId) };
+    const balance = r.rows[0].music_credits;
+    await query(
+      "INSERT INTO credit_ledger(client_id,delta,reason,job_id,balance_after,created_at,currency) VALUES($1,$2,$3,$4,$5,$6,'music')",
+      [clientId, amount, reason, jobId, balance, now()],
+    );
+    return { ok: true, balance };
+  },
 };
 
 // ─────────────────────────── Jobs ───────────────────────────

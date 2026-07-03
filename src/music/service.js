@@ -47,7 +47,7 @@ export async function createMusic(client, params, ip) {
     }
   }
 
-  const balance = await Credits.balance(client.id);
+  const balance = await Credits.musicBalance(client.id);
   if (balance < price) {
     await monitor.noteQuotaBlock(client, { needed: price, balance, ip });
     throw err('INSUFFICIENT_CREDITS', `Không đủ credits (cần ${price}, còn ${balance}).`, { price, balance });
@@ -56,7 +56,7 @@ export async function createMusic(client, params, ip) {
   const promptText = params.mode === 'custom' ? (params.title || params.lyrics || params.tags || '') : params.prompt;
   const jobId = uuidv7();
   await MusicJobs.create({ id: jobId, clientId: client.id, mode: params.mode, prompt: promptText, params, price });
-  const deduct = await Credits.change(client.id, -price, 'usage', jobId);
+  const deduct = await Credits.changeMusic(client.id, -price, 'usage', jobId);
   if (!deduct.ok) {
     await MusicJobs.update(jobId, { status: 'failed', error: 'Không đủ credits (race)' });
     throw err('INSUFFICIENT_CREDITS', 'Không đủ credits.', { price });
@@ -68,7 +68,7 @@ export async function createMusic(client, params, ip) {
     logEvent({ level: 'info', category: 'music', event: 'created', clientId: client.id, jobId, meta: { mode: params.mode, price } }).catch(() => {});
     return await MusicJobs.update(jobId, { provider_task_id: taskId, status: 'processing' });
   } catch (e) {
-    await Credits.change(client.id, price, 'refund', jobId);
+    await Credits.changeMusic(client.id, price, 'refund', jobId);
     // Khách chỉ thấy thông báo generic — KHÔNG lộ nguồn/nhà cung cấp. Chi tiết thật chỉ vào log.
     await MusicJobs.update(jobId, { status: 'failed', refunded: true, error: CUSTOMER_FAIL_MSG });
     logEvent({ level: 'error', category: 'music', event: 'create_failed', clientId: client.id, jobId, message: String(e.message || e), meta: { price, refunded: true } }).catch(() => {});
@@ -101,7 +101,7 @@ export async function advanceMusicJob(job) {
 }
 
 async function refund(job, detail) {
-  if (!job.refunded) await Credits.change(job.client_id, job.price, 'refund', job.id);
+  if (!job.refunded) await Credits.changeMusic(job.client_id, job.price, 'refund', job.id);
   // detail (có thể chứa tên nguồn) chỉ ghi log; job.error trả khách là generic.
   logEvent({ level: 'warn', category: 'music', event: 'failed', clientId: job.client_id, jobId: job.id, message: String(detail), meta: { credits: job.price, refunded: true } }).catch(() => {});
   return MusicJobs.update(job.id, { status: 'failed', refunded: true, error: CUSTOMER_FAIL_MSG });
