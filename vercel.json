@@ -3,6 +3,9 @@
   "functions": {
     "api/index.js": { "maxDuration": 30 }
   },
+  "redirects": [
+    { "source": "/", "destination": "/suno", "permanent": false }
+  ],
   "rewrites": [
     { "source": "/(.*)", "destination": "/api/index.js" }
   ],

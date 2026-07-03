@@ -160,10 +160,11 @@ export default async function docsRoutes(app) {
     reply.type('text/html').send(readFileSync(join(__dir, '../dashboard/pricing-zh.html'), 'utf8'));
   });
 
-  // Suno console (中文) — khách nhập API key, tạo nhạc, xem tài liệu API. Đặt ở '/' và '/suno'.
+  // Suno console (中文) — khách nhập API key, tạo nhạc, xem tài liệu API. Canonical: '/suno'.
   const sunoPage = (req, reply) => reply.type('text/html').send(readFileSync(join(__dir, '../dashboard/music.html'), 'utf8'));
-  app.get('/', sunoPage);
   app.get('/suno', sunoPage);
+  // Bare root '/' → /suno. (Vercel cũng redirect ở edge; đây là fallback nếu function vẫn nhận '/'.)
+  app.get('/', async (req, reply) => reply.code(302).header('location', '/suno').send());
   // Tương thích link cũ '/music' → '/suno'.
   app.get('/music', async (req, reply) => reply.code(301).header('location', '/suno').send());
 }
