@@ -18,6 +18,9 @@ export function musicPrice() {
   return config.SUNO_PRICE_CREDITS;
 }
 
+// Thông báo lỗi khách nhìn thấy — cố tình generic để KHÔNG lộ nguồn (ai33.pro).
+const CUSTOMER_FAIL_MSG = '生成失败，积分已退还，请重试';
+
 /**
  * Tạo nhạc cho client (không poll nền — serverless poll on-demand).
  * Trừ credits theo giá cố định; hoàn nếu gọi nguồn lỗi.
@@ -66,7 +69,8 @@ export async function createMusic(client, params, ip) {
     return await MusicJobs.update(jobId, { provider_task_id: taskId, status: 'processing' });
   } catch (e) {
     await Credits.change(client.id, price, 'refund', jobId);
-    await MusicJobs.update(jobId, { status: 'failed', refunded: true, error: String(e.message || e) });
+    // Khách chỉ thấy thông báo generic — KHÔNG lộ nguồn/nhà cung cấp. Chi tiết thật chỉ vào log.
+    await MusicJobs.update(jobId, { status: 'failed', refunded: true, error: CUSTOMER_FAIL_MSG });
     logEvent({ level: 'error', category: 'music', event: 'create_failed', clientId: client.id, jobId, message: String(e.message || e), meta: { price, refunded: true } }).catch(() => {});
     throw err('CREATE_FAILED', 'Tạo nhạc thất bại (đã hoàn credits).', { cause: String(e.message || e) });
   }
@@ -85,7 +89,7 @@ export async function advanceMusicJob(job) {
         image_url: s.imageUrl, title: s.title, duration: s.duration,
       });
     }
-    if (s.status === 'failed') return refund(job, s.error || 'AI33 failed');
+    if (s.status === 'failed') return refund(job, s.error || 'upstream failed');
     const upd = await MusicJobs.update(job.id, { status: 'processing' });
     upd._progress = s.progress; // transient: hiển thị tiến độ + preview (không lưu DB)
     upd._streamUrl = s.streamUrl;
@@ -96,10 +100,11 @@ export async function advanceMusicJob(job) {
   }
 }
 
-async function refund(job, error) {
+async function refund(job, detail) {
   if (!job.refunded) await Credits.change(job.client_id, job.price, 'refund', job.id);
-  logEvent({ level: 'warn', category: 'music', event: 'failed', clientId: job.client_id, jobId: job.id, message: String(error), meta: { credits: job.price, refunded: true } }).catch(() => {});
-  return MusicJobs.update(job.id, { status: 'failed', refunded: true, error });
+  // detail (có thể chứa tên nguồn) chỉ ghi log; job.error trả khách là generic.
+  logEvent({ level: 'warn', category: 'music', event: 'failed', clientId: job.client_id, jobId: job.id, message: String(detail), meta: { credits: job.price, refunded: true } }).catch(() => {});
+  return MusicJobs.update(job.id, { status: 'failed', refunded: true, error: CUSTOMER_FAIL_MSG });
 }
 
 /** Cron: đẩy các job nhạc đã "im" quá interval. */

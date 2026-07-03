@@ -13,7 +13,7 @@ export function isEnabled() {
 }
 
 function assertEnabled() {
-  if (!config.AI33_API_KEY) throw new HttpError('Tính năng tạo nhạc chưa bật (thiếu AI33_API_KEY)', 503);
+  if (!config.AI33_API_KEY) throw new HttpError('Tính năng tạo nhạc chưa bật', 503);
 }
 
 async function call({ path, method = 'GET', body }) {
@@ -36,7 +36,8 @@ async function call({ path, method = 'GET', body }) {
     ...(res.ok ? {} : { message: text.slice(0, 200) }),
   }).catch(() => {});
 
-  if (!res.ok) throw new HttpError(`AI33 trả về HTTP ${res.status}`, res.status, text);
+  // Lỗi chỉ để log nội bộ (đã che tên nguồn) — tầng trên luôn trả khách thông báo generic.
+  if (!res.ok) throw new HttpError(`Nhà cung cấp trả về HTTP ${res.status}`, res.status, text);
   try {
     return text ? JSON.parse(text) : {};
   } catch {
@@ -103,7 +104,7 @@ export function normalizeTask(raw) {
     duration: clips[0]?.duration ?? null,
     progress: raw?.progress ?? null,
     streamUrl: m.stream_url || streamClips[0]?.stream_url || null, // preview khi đang xử lý
-    error: raw?.error_message || (failed ? 'AI33 task failed' : null),
+    error: raw?.error_message || (failed ? 'generation failed' : null),
     raw,
   };
 }
