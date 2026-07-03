@@ -2,8 +2,9 @@ import { z } from 'zod';
 import { adminAuth } from '../auth/adminAuth.js';
 import { config } from '../config.js';
 import { session } from '../session/session.js';
-import { Clients, ApiKeys, Credits, Jobs, Usage, Alerts, Events } from '../db/repos.js';
+import { Clients, ApiKeys, Credits, Jobs, MusicJobs, Usage, Alerts, Events } from '../db/repos.js';
 import { sweepStaleJobs, checkSessionHealth } from '../videos/service.js';
+import * as suno from '../suno/client.js';
 import { pushAlert } from '../lib/notify.js';
 import * as catalog from '../artlist/catalog.js';
 import { signSession, safeEqualStr } from '../lib/token.js';
@@ -162,19 +163,37 @@ export default async function adminRoutes(app) {
     catch { return new Map(); }
   }
 
-  // Tổng hợp mọi client — bảng hoá đơn nhanh.
+  // Tổng hợp mọi client — bảng hoá đơn nhanh (video + nhạc).
   app.get('/admin/billing', async (req) => {
     const { since, until } = period(req.query);
-    const [rows, clients] = await Promise.all([Jobs.billingAll(since, until), Clients.list()]);
+    const [rows, mrows, clients] = await Promise.all([Jobs.billingAll(since, until), MusicJobs.billingAll(since, until), Clients.list()]);
     const byId = new Map(rows.map((r) => [r.client_id, r]));
+    const mById = new Map(mrows.map((r) => [r.client_id, r]));
     return {
       period: { since, until },
       clients: clients.map((c) => {
         const r = byId.get(c.id) || {};
-        return { clientId: c.id, name: c.name, status: c.status, balance: c.credits, videosDone: r.videos_done || 0, creditsUsed: r.credits_used || 0, videosFailed: r.videos_failed || 0 };
+        const m = mById.get(c.id) || {};
+        return {
+          clientId: c.id, name: c.name, status: c.status, balance: c.credits,
+          videosDone: r.videos_done || 0, videosFailed: r.videos_failed || 0,
+          songsDone: m.songs_done || 0, songsFailed: m.songs_failed || 0,
+          creditsUsed: (r.credits_used || 0) + (m.credits_used || 0),
+        };
       }),
-      totals: { creditsUsed: rows.reduce((s, r) => s + (r.credits_used || 0), 0), videosDone: rows.reduce((s, r) => s + (r.videos_done || 0), 0) },
+      totals: {
+        creditsUsed: rows.reduce((s, r) => s + (r.credits_used || 0), 0) + mrows.reduce((s, r) => s + (r.credits_used || 0), 0),
+        videosDone: rows.reduce((s, r) => s + (r.videos_done || 0), 0),
+        songsDone: mrows.reduce((s, r) => s + (r.songs_done || 0), 0),
+      },
     };
+  });
+
+  // Số dư credits còn lại ở NGUỒN AI33 (theo dõi vốn nhập). Cần bật AI33_API_KEY.
+  app.get('/admin/music/credits', async (req, reply) => {
+    if (!suno.isEnabled()) return reply.code(503).send({ error: 'Chưa bật AI33_API_KEY' });
+    try { return { provider: 'ai33', credits: await suno.providerCredits() }; }
+    catch (e) { return reply.code(502).send({ error: 'Không lấy được số dư nguồn', detail: String(e.message || e) }); }
   });
 
   // Chi tiết 1 client: tổng + phân tích theo model + job gần đây.
@@ -182,7 +201,7 @@ export default async function adminRoutes(app) {
     const c = await Clients.get(req.params.id);
     if (!c) return reply.code(404).send({ error: 'Không tìm thấy client' });
     const { since, until } = period(req.query);
-    const [jobs, names] = await Promise.all([Jobs.forBilling(c.id, since, until), modelNames()]);
+    const [jobs, names, musicJobs] = await Promise.all([Jobs.forBilling(c.id, since, until), modelNames(), MusicJobs.listByClient(c.id, 200)]);
     const midOf = (j) => { try { return JSON.parse(j.params_json || '{}').modelGroupId ?? null; } catch { return null; } };
     const byModel = new Map();
     let videosDone = 0, creditsUsed = 0, videosFailed = 0, creditsRefunded = 0;
@@ -195,12 +214,20 @@ export default async function adminRoutes(app) {
         e.count++; e.credits += j.price; byModel.set(k, e);
       } else if (j.status === 'failed') { videosFailed++; if (j.refunded) creditsRefunded += j.price; }
     }
+    // Nhạc: gộp trong cùng khoảng.
+    const mInRange = musicJobs.filter((j) => Number(j.created_at) >= since && Number(j.created_at) <= until);
+    let songsDone = 0, musicCreditsUsed = 0, songsFailed = 0;
+    for (const j of mInRange) {
+      if (j.status === 'done') { songsDone++; musicCreditsUsed += j.price; }
+      else if (j.status === 'failed') songsFailed++;
+    }
     return {
       clientId: c.id, name: c.name, balance: c.credits, ignorePriceCaps: !!c.ignore_price_caps,
       period: { since, until },
-      summary: { videosDone, creditsUsed, videosFailed, creditsRefunded },
+      summary: { videosDone, creditsUsed, videosFailed, creditsRefunded, songsDone, musicCreditsUsed, songsFailed, totalCredits: creditsUsed + musicCreditsUsed },
       byModel: [...byModel.values()].sort((a, b) => b.credits - a.credits),
       recentJobs: jobs.slice(0, 50).map((j) => ({ jobId: j.id, status: j.status, credits: j.price, model: names.get(midOf(j)) || '', createdAt: Number(j.created_at) })),
+      recentMusic: mInRange.slice(0, 50).map((j) => ({ jobId: j.id, status: j.status, credits: j.price, mode: j.mode, title: j.title || '', createdAt: Number(j.created_at) })),
     };
   });
 

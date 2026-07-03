@@ -105,6 +105,29 @@ async function migrate() {
   await _q(`CREATE INDEX IF NOT EXISTS idx_jobs_client ON jobs(client_id, created_at)`);
   await _q(`CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status)`);
 
+  // Job tạo nhạc Suno (nguồn AI33) — tách riêng khỏi jobs video để billing/logic sạch.
+  await _q(`CREATE TABLE IF NOT EXISTS music_jobs (
+    id text PRIMARY KEY,
+    client_id text NOT NULL REFERENCES clients(id),
+    provider_task_id text,
+    status text NOT NULL,
+    mode text,
+    prompt text,
+    params_json text,
+    price integer NOT NULL DEFAULT 0,
+    refunded integer NOT NULL DEFAULT 0,
+    audio_url text,
+    audio_urls_json text,
+    image_url text,
+    title text,
+    duration real,
+    error text,
+    created_at bigint NOT NULL,
+    updated_at bigint NOT NULL
+  )`);
+  await _q(`CREATE INDEX IF NOT EXISTS idx_music_client ON music_jobs(client_id, created_at)`);
+  await _q(`CREATE INDEX IF NOT EXISTS idx_music_status ON music_jobs(status)`);
+
   await _q(`CREATE TABLE IF NOT EXISTS usage_events (
     id bigserial PRIMARY KEY,
     client_id text,

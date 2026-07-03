@@ -162,6 +162,62 @@ export const Jobs = {
   },
 };
 
+// ─────────────────────────── Music jobs (Suno qua AI33) ───────────────────────────
+const MUSIC_COLS = ['provider_task_id', 'status', 'price', 'refunded', 'audio_url', 'audio_urls_json', 'image_url', 'title', 'duration', 'error'];
+export const MusicJobs = {
+  async create({ id, clientId, mode, prompt, params, price }) {
+    const t = now();
+    await query(
+      `INSERT INTO music_jobs(id,client_id,status,mode,prompt,params_json,price,created_at,updated_at)
+       VALUES($1,$2,'pending',$3,$4,$5,$6,$7,$7)`,
+      [id, clientId, mode ?? null, prompt ?? null, JSON.stringify(params ?? {}), price ?? 0, t],
+    );
+    return this.get(id);
+  },
+  async get(id) {
+    return one(await query('SELECT * FROM music_jobs WHERE id=$1', [id]));
+  },
+  async update(id, patch) {
+    const sets = [];
+    const vals = [];
+    let i = 1;
+    for (const col of MUSIC_COLS) {
+      if (col in patch) {
+        sets.push(`${col}=$${i++}`);
+        vals.push(col === 'refunded' ? (patch[col] ? 1 : 0) : patch[col]);
+      }
+    }
+    sets.push(`updated_at=$${i++}`);
+    vals.push(now());
+    vals.push(id);
+    await query(`UPDATE music_jobs SET ${sets.join(', ')} WHERE id=$${i}`, vals);
+    return this.get(id);
+  },
+  async listByClient(clientId, limit = 100) {
+    return (await query('SELECT * FROM music_jobs WHERE client_id=$1 ORDER BY created_at DESC LIMIT $2', [clientId, limit])).rows;
+  },
+  async countActiveByClient(clientId) {
+    return one(await query(`SELECT COUNT(*)::int n FROM music_jobs WHERE client_id=$1 AND status IN ('pending','processing')`, [clientId])).n;
+  },
+  async listProcessing(olderThanMs = 0, limit = 100) {
+    return (await query(
+      `SELECT * FROM music_jobs WHERE status IN ('pending','processing') AND updated_at <= $1 ORDER BY updated_at ASC LIMIT $2`,
+      [now() - olderThanMs, limit],
+    )).rows;
+  },
+  // Tổng hợp mọi client: số nhạc done + credits đã dùng trong khoảng (billing).
+  async billingAll(since, until) {
+    return (await query(
+      `SELECT client_id,
+        SUM(CASE WHEN status='done' THEN 1 ELSE 0 END)::int songs_done,
+        SUM(CASE WHEN status='done' THEN price ELSE 0 END)::int credits_used,
+        SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END)::int songs_failed
+       FROM music_jobs WHERE created_at>=$1 AND created_at<=$2 GROUP BY client_id`,
+      [since, until],
+    )).rows;
+  },
+};
+
 // ─────────────────────────── Usage ───────────────────────────
 export const Usage = {
   async record({ clientId = null, apiKeyId = null, type, path = null, statusCode = null, ip = null, meta = null }) {

@@ -2,8 +2,10 @@ import { z } from 'zod';
 import { clientAuth } from '../auth/clientAuth.js';
 import * as catalog from '../artlist/catalog.js';
 import * as service from '../videos/service.js';
+import * as music from '../music/service.js';
+import * as suno from '../suno/client.js';
 import * as artlist from '../artlist/client.js';
-import { Jobs, Credits } from '../db/repos.js';
+import { Jobs, MusicJobs, Credits } from '../db/repos.js';
 import { session } from '../session/session.js';
 import { logEvent } from '../lib/events.js';
 
@@ -28,6 +30,23 @@ const createSchema = z
     maxCredits: z.number().int().positive().optional(),
   })
   .refine((d) => d.prompt || d.settings?.prompt, { message: 'Cần prompt (trực tiếp hoặc trong settings)' });
+
+// Tạo nhạc Suno (qua AI33). mode=simple cần prompt; mode=custom cần lyrics hoặc tags.
+const musicSchema = z
+  .object({
+    mode: z.enum(['simple', 'custom']).default('simple'),
+    prompt: z.string().min(1).max(500).optional(), // simple: mô tả ngắn bài hát
+    instrumental: z.boolean().optional(), // simple: chỉ nhạc, không lời
+    title: z.string().max(80).optional(), // custom: tiêu đề
+    lyrics: z.string().max(5000).optional(), // custom: lời bài hát
+    tags: z.string().max(1000).optional(), // custom: phong cách (vd "indie pop, cinematic")
+    vocalGender: z.enum(['f', 'm']).optional(), // custom: giọng nữ/nam
+    maxCredits: z.number().int().positive().optional(),
+    expectedCredits: z.number().int().optional(),
+  })
+  .refine((d) => (d.mode === 'custom' ? Boolean(d.lyrics || d.tags) : Boolean(d.prompt)), {
+    message: 'simple cần prompt; custom cần lyrics hoặc tags',
+  });
 
 /** Client API — bảo vệ bằng X-API-Key. */
 export default async function v1Routes(app) {
@@ -105,6 +124,37 @@ export default async function v1Routes(app) {
   });
 
   app.get('/v1/videos', async (req) => (await Jobs.listByClient(req.client.id, 100)).map(service.publicJob));
+
+  // ─────────────────────────── Nhạc (Suno qua AI33) ───────────────────────────
+  // Giá cố định theo credits (GET /v1/music/price). Luồng: POST /v1/music → poll GET /v1/music/{id}.
+  app.get('/v1/music/price', async (req, reply) => {
+    if (!suno.isEnabled()) return reply.code(503).send({ error: 'Tính năng tạo nhạc chưa được bật.' });
+    return { credits: music.musicPrice() };
+  });
+
+  app.post('/v1/music', async (req, reply) => {
+    logEvent({ level: 'debug', category: 'client_req', event: 'music_body', clientId: req.client?.id, ip: req.realIp ?? req.ip, meta: { body: req.body } }).catch(() => {});
+    if (!suno.isEnabled()) return reply.code(503).send({ error: 'Tính năng tạo nhạc chưa được bật.' });
+    const parsed = musicSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'Tham số không hợp lệ', issues: parsed.error.issues });
+    try {
+      const job = await music.createMusic(req.client, parsed.data, req.realIp ?? req.ip);
+      return reply.code(202).send(music.publicMusicJob(job));
+    } catch (e) {
+      req.log.warn({ code: e.code, err: String(e.message) }, 'createMusic lỗi');
+      return reply.code(mapError(e.code)).send({ error: e.message, code: e.code ?? 'ERROR' });
+    }
+  });
+
+  // Poll on-demand: mỗi lần hỏi sẽ đẩy trạng thái từ AI33 (serverless-friendly).
+  app.get('/v1/music/:id', async (req, reply) => {
+    let job = await MusicJobs.get(req.params.id);
+    if (!job || job.client_id !== req.client.id) return reply.code(404).send({ error: 'Không tìm thấy job' });
+    if (['pending', 'processing'].includes(job.status)) job = await music.advanceMusicJob(job);
+    return music.publicMusicJob(job);
+  });
+
+  app.get('/v1/music', async (req) => (await MusicJobs.listByClient(req.client.id, 100)).map(music.publicMusicJob));
 }
 
 function mapError(code) {
@@ -120,6 +170,7 @@ function mapError(code) {
     case 'RATE_LIMITED':
       return 429;
     case 'SESSION_EXPIRED':
+    case 'MUSIC_DISABLED':
       return 503;
     default:
       return 500;

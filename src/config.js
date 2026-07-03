@@ -36,6 +36,12 @@ const schema = z.object({
   POLL_TIMEOUT_MS: z.coerce.number().int().positive().default(600000),
   MAX_CONCURRENT_JOBS: z.coerce.number().int().positive().default(4),
 
+  // ─── Suno (nhạc) qua nhà cung cấp AI33 (api.ai33.pro) — reseller ───
+  AI33_BASE_URL: z.string().url().default('https://api.ai33.pro'),
+  AI33_API_KEY: z.string().optional(), // key nguồn (bí mật). Trống => tắt tính năng tạo nhạc.
+  SUNO_PRICE_CREDITS: z.coerce.number().int().positive().default(600), // giá bán 1 lần tạo nhạc (credits)
+  SUNO_POLL_TIMEOUT_MS: z.coerce.number().int().positive().default(600000), // trần thời gian chờ 1 job nhạc
+
   // Rate limit mặc định cho client mới (admin chỉnh riêng từng client được).
   DEFAULT_RATE_PER_MIN: z.coerce.number().int().positive().default(6),
   DEFAULT_RATE_PER_DAY: z.coerce.number().int().positive().default(200),

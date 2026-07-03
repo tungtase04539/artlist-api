@@ -84,6 +84,49 @@ const openapi = {
         responses: { 200: { description: 'OK' }, 404: { description: 'Không tìm thấy' } },
       },
     },
+    '/v1/music/price': { get: { summary: 'Giá 1 lần tạo nhạc (credits, cố định)', responses: { 200: { description: 'OK' }, 503: { description: 'Tính năng tắt' } } } },
+    '/v1/music': {
+      get: { summary: 'Danh sách nhạc của bạn', responses: { 200: { description: 'OK' } } },
+      post: {
+        summary: 'Tạo nhạc Suno (async). Trả jobId + status=processing, rồi poll GET /v1/music/{id} tới done.',
+        description:
+          'Hai chế độ: `mode=simple` (mô tả ngắn → bài hát) hoặc `mode=custom` (tự viết lời + phong cách). '
+          + 'Mỗi lần tạo trả về ~2 phiên bản (audioUrls). Giá cố định theo credits (xem GET /v1/music/price).',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  mode: { type: 'string', enum: ['simple', 'custom'], default: 'simple', description: 'simple = mô tả ngắn; custom = tự viết lời/phong cách.' },
+                  prompt: { type: 'string', maxLength: 500, description: '[simple] Mô tả bài hát.' },
+                  instrumental: { type: 'boolean', description: '[simple] Chỉ nhạc, không lời.' },
+                  title: { type: 'string', maxLength: 80, description: '[custom] Tiêu đề.' },
+                  lyrics: { type: 'string', maxLength: 5000, description: '[custom] Lời bài hát (cần lyrics hoặc tags).' },
+                  tags: { type: 'string', maxLength: 1000, description: '[custom] Phong cách, vd "indie pop, cinematic".' },
+                  vocalGender: { type: 'string', enum: ['f', 'm'], description: '[custom] Giọng nữ/nam.' },
+                  maxCredits: { type: 'integer', description: 'Trần giá — từ chối nếu vượt.' },
+                  expectedCredits: { type: 'integer', description: 'Giá dự tính — lệch giá thật sẽ bị từ chối.' },
+                },
+              },
+              examples: {
+                simple: { value: { mode: 'simple', prompt: 'a warm indie pop song about chasing dreams at sunrise', instrumental: false } },
+                custom: { value: { mode: 'custom', title: 'Sunrise Lines', lyrics: '[Verse 1]\nI walk the line between two lives', tags: 'indie pop, emotional, cinematic drums', vocalGender: 'f' } },
+              },
+            },
+          },
+        },
+        responses: { 202: { description: 'Đã nhận (status=processing)' }, 400: { description: 'Sai tham số' }, 401: { description: 'Thiếu/sai X-API-Key' }, 402: { description: 'Không đủ credits' }, 429: { description: 'Vượt rate limit' }, 503: { description: 'Tính năng tắt' } },
+      },
+    },
+    '/v1/music/{id}': {
+      get: {
+        summary: 'Trạng thái nhạc (done → audioUrl + audioUrls[])',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { 200: { description: 'OK' }, 404: { description: 'Không tìm thấy' } },
+      },
+    },
   },
 };
 
@@ -115,5 +158,10 @@ export default async function docsRoutes(app) {
   // 价格表 (中文) — bảng giá Seedance 2.0 cho khách.
   app.get('/pricing', async (req, reply) => {
     reply.type('text/html').send(readFileSync(join(__dir, '../dashboard/pricing-zh.html'), 'utf8'));
+  });
+
+  // Music console (中文) — khách tạo nhạc Suno (Simple/Custom), nghe & tải.
+  app.get('/music', async (req, reply) => {
+    reply.type('text/html').send(readFileSync(join(__dir, '../dashboard/music.html'), 'utf8'));
   });
 }
